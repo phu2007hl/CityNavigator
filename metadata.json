@@ -1,0 +1,8 @@
+{
+  "name": "CityNavigator: Khám phá thành phố & Thiết kế hành trình",
+  "description": "Ứng dụng tổng hợp địa điểm ăn chơi, giải trí có kèm theo video review và trợ lý AI tối ưu hóa lịch trình, sắp xếp thời gian di chuyển phù hợp với ngân sách của bạn.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
