@@ -12,6 +12,8 @@ interface AIPlanDisplayProps {
   onModifyItinerary: (updated: Itinerary) => void;
 }
 
+
+
 export default function AIPlanDisplay({ itinerary, onModifyItinerary }: AIPlanDisplayProps) {
   const [visitedActivities, setVisitedActivities] = useState<string[]>([]);
   const [activeDay, setActiveDay] = useState(1);
@@ -106,6 +108,7 @@ export default function AIPlanDisplay({ itinerary, onModifyItinerary }: AIPlanDi
   };
 
   const currentDayPlan = itinerary.dayPlans.find((dp) => dp.dayNumber === activeDay);
+  
 
   return (
     <div id="ai-plan-panel" className="bg-white rounded-3xl border border-neutral-100 shadow-xl p-5 sm:p-7 text-left space-y-6">
@@ -246,7 +249,7 @@ export default function AIPlanDisplay({ itinerary, onModifyItinerary }: AIPlanDi
           ) : (
             currentDayPlan?.activities.map((activity, index) => {
               const isVisited = visitedActivities.includes(activity.id);
-
+              
               return (
                 <div key={activity.id} className="relative group">
                   {index < currentDayPlan.activities.length - 1 && (
@@ -279,28 +282,7 @@ export default function AIPlanDisplay({ itinerary, onModifyItinerary }: AIPlanDi
                         </h3>
 
                         {/* Điểm xuất phát độc lập từ ô nhập vào, chỉ đường bằng Tên quán + Tên đường + Thành phố */}
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            let mode = 'driving';
-                            if (itinerary.transportation === 'walking') mode = 'walking';
-                            else if (itinerary.transportation === 'motorbike') mode = 'two-wheeler';
-
-                            const originParam = encodeURIComponent(itinerary.destination);
-                            
-                            const addressPart = activity.address ? `${activity.address}` : '';
-                            const destStr = addressPart ? `${activity.title}, ${addressPart}` : `${activity.title}, ${itinerary.destination}`;
-                            const destParam = encodeURIComponent(destStr);
-                            
-                            const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${originParam}&destination=${destParam}&travelmode=${mode}`;
-                            
-                            window.open(googleMapsUrl, '_blank');
-                          }}
-                          className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 active:bg-blue-200 border border-blue-100 rounded-lg text-[11px] font-bold transition-all cursor-pointer shadow-xs"
-                        >
-                          <Navigation className="w-3.5 h-3.5" />
-                          <span>Chỉ đường từ điểm xuất phát</span>
-                        </button>
+                        {/* Tối ưu hóa: Dùng Tên quán + Thành phố để Google Maps tự động Map Matching */}
                       </div>
 
                       <div className="text-right flex flex-col justify-between items-end gap-2.5">
@@ -322,9 +304,6 @@ export default function AIPlanDisplay({ itinerary, onModifyItinerary }: AIPlanDi
                   {activity.transportToNext && index < currentDayPlan.activities.length - 1 && (
                     <div className="my-5 pl-[48px] flex items-center gap-3 text-[11px] font-mono text-neutral-400 bg-neutral-50 px-3 py-1.5 rounded-xl border border-neutral-100 w-fit max-w-full">
                       {getTransportIcon(activity.transportToNext.method)}
-                      <span className="font-semibold text-neutral-600">Di chuyển {activity.transportToNext.distanceKm} km</span>
-                      <span>•</span>
-                      <span className="font-semibold text-neutral-600">~{activity.transportToNext.durationMinutes} phút ({decodeTransportMethod(activity.transportToNext.method)})</span>
                     </div>
                   )}
 

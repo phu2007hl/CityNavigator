@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Sparkles, Calendar, CircleDollarSign, Bike, Navigation, MapPin, 
+  Sparkles, CircleDollarSign, Bike, Navigation, MapPin, 
   RefreshCw, CheckCircle2, AlertCircle, BookmarkCheck, Heart, User,
   CloudSun, CloudRain, ThermometerSun, Trash2
 } from 'lucide-react';
@@ -21,7 +21,10 @@ export default function AIPlanner({ selectedPlaces, onRemoveSelectedPlace, defau
   const [radiusKm, setRadiusKm] = useState(10);
   const [budgetLevel, setBudgetLevel] = useState<BudgetLevel>('moderate');
   const [transportation, setTransportation] = useState<'motorbike' | 'taxi' | 'walking'>('motorbike');
-  const [vibe, setVibe] = useState<'all' | 'family' | 'friends' | 'romantic' | 'adventure'>('friends');
+  
+  // SỬ DỤNG PURPOSE (MỤC ĐÍCH CHUYẾN ĐI) THAY VÌ VIBE
+  const [purpose, setPurpose] = useState('');
+  
   const [weatherPreference, setWeatherPreference] = useState<'auto' | 'sunny' | 'rainy' | 'hot'>('auto');
   const [loading, setLoading] = useState(false);
   const [loaderMessageIndex, setLoaderMessageIndex] = useState(0);
@@ -50,10 +53,8 @@ export default function AIPlanner({ selectedPlaces, onRemoveSelectedPlace, defau
       const alreadySaved = prev.some(item => item.id === itinerary.id);
       
       if (alreadySaved) {
-        // Toggle remove
         updated = prev.filter(item => item.id !== itinerary.id);
       } else {
-        // Toggle add
         updated = [itinerary, ...prev];
       }
       localStorage.setItem('vivu_saved_itineraries', JSON.stringify(updated));
@@ -74,20 +75,18 @@ export default function AIPlanner({ selectedPlaces, onRemoveSelectedPlace, defau
     });
   };
 
-  // Update selection if user switches city in main header
   useEffect(() => {
     if (defaultDestination) {
       setDestination(defaultDestination);
     }
   }, [defaultDestination]);
 
-  // Loading screen simulated milestone notes ticker
   const loaderMilestones = [
     '🤖 Đang kết nối Trực quan hóa dữ liệu du lịch...',
     '⭐ Đang phân tích ý kiến đánh giá tích cực từ khách hàng cũ...',
     '🏍️ Đang tính toán và kết nối các tọa độ di chuyển phù hợp nhất...',
     '💰 Tổ chức quỹ ngân sách chi tiêu và phân phối hợp lý...',
-    '✨ Hoàn hóa tệp lịch trình du lịch bằng Tiếng Việt sắc bén...'
+    '✨ Hoàn thiện tệp lịch trình cá nhân hóa bằng AI...'
   ];
 
   useEffect(() => {
@@ -117,12 +116,12 @@ export default function AIPlanner({ selectedPlaces, onRemoveSelectedPlace, defau
           destination: finalDestinationName,
           budget: budgetLevel,
           transportation,
-          vibe,
+          purpose: purpose.trim() || 'Khám phá và trải nghiệm thành phố', // GỬI PURPOSE LÊN SERVER
           durationValue,
           durationUnit,
           radiusKm,
-          selectedPlaces, // pass forced spots
-          weatherPreference // Send preference
+          selectedPlaces,
+          weatherPreference
         })
       });
 
@@ -131,7 +130,6 @@ export default function AIPlanner({ selectedPlaces, onRemoveSelectedPlace, defau
         throw new Error(data.error || 'Hệ thống AI bận rộn. Vui lòng kiểm tra cài đặt Secrets của bạn.');
       }
 
-      // Ensure every activity has a unique string id
       const formattedDayPlans = (data.dayPlans || []).map((dp: any, dayIdx: number) => ({
         ...dp,
         dayNumber: dp.dayNumber || (dayIdx + 1),
@@ -141,7 +139,6 @@ export default function AIPlanner({ selectedPlaces, onRemoveSelectedPlace, defau
         }))
       }));
 
-      // Converted returned result nicely
       setItinerary({
         id: `itinerary-${Date.now()}`,
         destination: data.destination || finalDestinationName,
@@ -181,9 +178,7 @@ export default function AIPlanner({ selectedPlaces, onRemoveSelectedPlace, defau
     <div id="ai-planner-component" className="w-full">
       
       {loading ? (
-        /* POLISHED LOADING SCREENS */
         <div className="bg-neutral-900 text-white rounded-3xl p-8 sm:p-12 text-center flex flex-col items-center justify-center space-y-6 h-[460px] border border-neutral-800 shadow-2xl relative overflow-hidden">
-          {/* Subtle spinning space ring */}
           <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-emerald-500 via-teal-500 to-amber-400 animate-pulse" />
           
           <div className="relative">
@@ -193,8 +188,6 @@ export default function AIPlanner({ selectedPlaces, onRemoveSelectedPlace, defau
 
           <div className="space-y-2 max-w-md">
             <h3 className="text-lg font-bold text-white uppercase tracking-wider">Trí tuệ nhân tạo đang làm việc</h3>
-            
-            {/* Displaying moving milestones */}
             <p className="text-sm text-emerald-300 font-medium font-mono min-h-[40px] animate-pulse">
               {loaderMilestones[loaderMessageIndex]}
             </p>
@@ -204,7 +197,6 @@ export default function AIPlanner({ selectedPlaces, onRemoveSelectedPlace, defau
           </div>
         </div>
       ) : itinerary ? (
-        /* DISPLAY TRIP PLAN RESULTS */
         <div className="space-y-4">
           <div className="flex justify-between items-center gap-3 flex-wrap">
             <button
@@ -236,7 +228,6 @@ export default function AIPlanner({ selectedPlaces, onRemoveSelectedPlace, defau
           />
         </div>
       ) : (
-        /* STANDARD INPUT CONFIGURATION FORM */
         <div className="bg-white rounded-3xl border border-neutral-100 shadow-xl p-5 sm:p-7 text-left space-y-6">
           
           <div className="flex items-center gap-2 border-b border-neutral-100 pb-4">
@@ -245,11 +236,10 @@ export default function AIPlanner({ selectedPlaces, onRemoveSelectedPlace, defau
             </div>
             <div>
               <h2 className="text-base sm:text-lg font-extrabold text-neutral-900">Thiết kế Tour Ăn Chơi với AI</h2>
-              <p className="text-xs text-neutral-400">AI tự động cân nhắc review tích cực và lịch trình di chuyển tối ưu nhất.</p>
+              <p className="text-xs text-neutral-400">AI cá nhân hóa lịch trình theo mục đích và thời gian thực.</p>
             </div>
           </div>
 
-          {/* Saved Itineraries Section */}
           {savedItineraries.length > 0 && (
             <div className="bg-neutral-50 rounded-2xl p-4 border border-neutral-200/60 text-left space-y-3">
               <span className="text-[11px] font-black text-neutral-500 uppercase tracking-widest flex items-center gap-1.5">
@@ -302,13 +292,24 @@ export default function AIPlanner({ selectedPlaces, onRemoveSelectedPlace, defau
           )}
 
           <form onSubmit={handleGeneratePlan} className="space-y-5">
+            
+            {/* TEXTAREA NHẬP MỤC ĐÍCH CHUYẾN ĐI (MỚI) */}
+            <div>
+              <label className="block text-xs font-bold text-neutral-700 mb-1.5 uppercase tracking-wider">Mục Đích & Yêu Cầu Cụ Thể (AI Prompt)</label>
+              <textarea
+                id="purpose-input"
+                rows={2}
+                value={purpose}
+                onChange={(e) => setPurpose(e.target.value)}
+                placeholder="Ví dụ: Xả stress sau kỳ thi, đi cafe học Toán, chụp ảnh kỷ yếu, né giờ làm ca sáng (7h-13h)..."
+                className="w-full bg-neutral-50/50 text-xs border border-neutral-200 rounded-xl px-3.5 py-2.5 focus:outline-emerald-500 focus:bg-white text-neutral-800 text-left placeholder:text-neutral-400 resize-none shadow-inner"
+              />
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              
-              {/* Select City destination */}
               <div>
-                <label className="block text-xs font-bold text-neutral-700 mb-1.5 uppercase tracking-wider">Mục Tiêu Điểm Đến</label>
+                <label className="block text-xs font-bold text-neutral-700 mb-1.5 uppercase tracking-wider">📍Điểm xuất phát</label>
                 <select
-                  id="destination-select"
                   value={destination}
                   onChange={(e) => setDestination(e.target.value)}
                   className="w-full bg-neutral-50 text-xs border border-neutral-200 rounded-xl px-3.5 py-2.5 text-left focus:outline-emerald-500 focus:bg-white text-neutral-800 cursor-pointer"
@@ -322,10 +323,8 @@ export default function AIPlanner({ selectedPlaces, onRemoveSelectedPlace, defau
 
                 {destination === 'custom' && (
                   <input
-                    id="custom-dest-input"
-                    type="text"
-                    required
-                    placeholder="Nhập tên điểm đến (e.g. Hội An, Phú Quốc, Sapa...)"
+                    type="text" required
+                    placeholder="Nhập địa điểm"
                     value={customDestination}
                     onChange={(e) => setCustomDestination(e.target.value)}
                     className="w-full bg-white text-xs border border-neutral-250 rounded-xl px-3.5 py-2.5 text-left focus:outline-emerald-500 mt-2 font-sans placeholder:text-neutral-400"
@@ -333,7 +332,6 @@ export default function AIPlanner({ selectedPlaces, onRemoveSelectedPlace, defau
                 )}
               </div>
 
-              {/* Budget preference Level */}
               <div>
                 <label className="block text-xs font-bold text-neutral-700 mb-1.5 uppercase tracking-wider">Hạn Mức Ngân Sách</label>
                 <div className="grid grid-cols-3 gap-2">
@@ -359,7 +357,6 @@ export default function AIPlanner({ selectedPlaces, onRemoveSelectedPlace, defau
                 </div>
               </div>
 
-              {/* Transportation method */}
               <div>
                 <label className="block text-xs font-bold text-neutral-700 mb-1.5 uppercase tracking-wider">Phương Tiện Di Chuyển Chính</label>
                 <div className="grid grid-cols-3 gap-2">
@@ -385,7 +382,6 @@ export default function AIPlanner({ selectedPlaces, onRemoveSelectedPlace, defau
                 </div>
               </div>
 
-              {/* Duration choice (number input + select unit) */}
               <div>
                 <label className="block text-xs font-bold text-neutral-700 mb-1.5 uppercase tracking-wider">Thời Lượng Hành Trình</label>
                 <div className="flex gap-2">
@@ -398,7 +394,6 @@ export default function AIPlanner({ selectedPlaces, onRemoveSelectedPlace, defau
                     className="w-[90px] bg-neutral-50 text-xs border border-neutral-200 rounded-xl px-3 py-2.5 focus:outline-emerald-500 focus:bg-white text-neutral-800 text-center font-bold"
                   />
                   <select
-                    id="duration-unit-select"
                     value={durationUnit}
                     onChange={(e) => {
                       const unit = e.target.value as 'hours' | 'days';
@@ -413,14 +408,12 @@ export default function AIPlanner({ selectedPlaces, onRemoveSelectedPlace, defau
                 </div>
               </div>
 
-              {/* Radius travel limits */}
               <div>
                 <label className="block text-xs font-bold text-neutral-700 mb-1.5 uppercase tracking-wider">Bán Kính Di Chuyển (Cự Ly)</label>
                 <div className="flex items-center gap-2">
                   <input
                     type="number"
-                    min="1"
-                    max="100"
+                    min="1" max="100"
                     value={radiusKm}
                     onChange={(e) => setRadiusKm(Math.max(1, parseInt(e.target.value) || 1))}
                     className="w-full bg-neutral-50 text-xs border border-neutral-200 rounded-xl px-3.5 py-2.5 focus:outline-emerald-500 focus:bg-white text-neutral-800 font-bold"
@@ -431,23 +424,6 @@ export default function AIPlanner({ selectedPlaces, onRemoveSelectedPlace, defau
                 </div>
               </div>
 
-              {/* Companion vibes selection */}
-              <div>
-                <label className="block text-xs font-bold text-neutral-700 mb-1.5 uppercase tracking-wider">Không Khí Chuyến Đi</label>
-                <select
-                  id="companion-vibe-select"
-                  value={vibe}
-                  onChange={(e) => setVibe(e.target.value as any)}
-                  className="bg-neutral-50 text-xs border border-neutral-200 rounded-xl px-3.5 py-2.5 focus:outline-emerald-500 focus:bg-white text-neutral-800 cursor-pointer w-full text-left"
-                >
-                  <option value="friends">Cực cháy cùng bạn bè</option>
-                  <option value="romantic">Hẹn hò lãng mạn</option>
-                  <option value="family">Gia đình ấm cúng</option>
-                  <option value="adventure">Phượt & Khám phá</option>
-                </select>
-              </div>
-
-              {/* Weather Filter override */}
               <div>
                 <label className="block text-xs font-bold text-neutral-700 mb-1.5 uppercase tracking-wider">Trạng Thái Thời Tiết (Weather-Aware)</label>
                 <div className="grid grid-cols-2 gap-2">
@@ -504,11 +480,8 @@ export default function AIPlanner({ selectedPlaces, onRemoveSelectedPlace, defau
                   </button>
                 </div>
               </div>
-
-
             </div>
 
-            {/* Selected places list preview */}
             {selectedPlaces.length > 0 && (
               <div className="bg-emerald-50/40 rounded-2xl p-4 border border-emerald-100/50 text-left space-y-2.5">
                 <div className="flex justify-between items-center">
@@ -516,7 +489,7 @@ export default function AIPlanner({ selectedPlaces, onRemoveSelectedPlace, defau
                     <BookmarkCheck className="w-4 h-4 text-emerald-600" />
                     Các Thẻ Địa Điểm Đã Chọn Cho Tour ({selectedPlaces.length}):
                   </span>
-                  <p className="text-[10px] text-neutral-400">Các điểm này sẽ bắt buộc xuất hiện trong lịch trình di chuyển</p>
+                  <p className="text-[10px] text-neutral-400">Các điểm này sẽ bắt buộc xuất hiện trong lịch trình</p>
                 </div>
 
                 <div className="flex flex-wrap gap-1.5">
@@ -535,7 +508,6 @@ export default function AIPlanner({ selectedPlaces, onRemoveSelectedPlace, defau
               </div>
             )}
 
-            {/* Submit Action button */}
             <div className="pt-2">
               <button
                 type="submit"
@@ -544,8 +516,8 @@ export default function AIPlanner({ selectedPlaces, onRemoveSelectedPlace, defau
                 <Sparkles className="w-4 h-4 text-emerald-200 animate-pulse" />
                 <span>
                   {selectedPlaces.length > 0 
-                    ? `Lên lịch trình kết hợp ${selectedPlaces.length} địa điểm đã chọn` 
-                    : 'Thiết kế lịch trình tối ưu bằng AI ngay'}
+                    ? `Lên lịch trình cá nhân hóa + ${selectedPlaces.length} điểm đã chọn` 
+                    : 'Thiết kế lịch trình cá nhân hóa bằng AI ngay'}
                 </span>
               </button>
               <p className="text-[10px] text-neutral-400 text-center mt-2">Dịch vụ sử dụng mô hình trí tuệ nhân tạo Gemini-3.5-Flash</p>

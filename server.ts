@@ -80,7 +80,6 @@ async function getWeatherForCoords(lat: number, lng: number, cityName: string): 
 // Hàm gọi dữ liệu địa điểm thực tế từ Overpass API (OpenStreetMap) miễn phí
 async function fetchOSMPlaces(lat: number, lng: number, radiusKm: number, amenity: string): Promise<any[]> {
   const radiusMeters = radiusKm * 1000;
-  // Overpass QL Query: Tìm các node có tag amenity (cafe, restaurant...) và có tên, trong bán kính N mét
   const query = `
     [out:json][timeout:10];
     (
@@ -118,21 +117,31 @@ async function fetchOSMPlaces(lat: number, lng: number, radiusKm: number, amenit
 }
 
 function generateFallbackPlan(params: {
-  destination: string, budget: string, transportation: string, vibe: string,
+  destination: string, budget: string, transportation: string, purpose: string,
   durationValue: number, durationUnit: string, radiusKm: number,
   selectedPlaces: any[], weatherInfo: { condition: 'sunny' | 'rainy' | 'hot', temp: number, desc: string }
 }) {
-  const { destination, budget, transportation, vibe, durationValue, durationUnit, radiusKm, weatherInfo } = params;
+  const { destination, budget, transportation, purpose, durationValue, durationUnit, radiusKm, weatherInfo } = params;
   const cityCoords = getCityCoordsAndId(destination);
   const costCoeff = budget === 'cheap' ? 0.65 : budget === 'luxury' ? 2.5 : 1.2;
   const dayPlans: any[] = [];
 
+  // Thêm dòng này để kiểm tra xem mục đích có phải là học/làm việc không
+  const isStudying = purpose.toLowerCase().includes('học') || purpose.toLowerCase().includes('làm việc') || purpose.toLowerCase().includes('đề');
+
+  // Cập nhật lại danh sách tên ảo dựa theo mục đích
   const genericNames: Record<string, string[]> = {
     meal: ["Phố ẩm thực địa phương", "Tổ hợp ăn uống Food Court"],
-    coffee: ["Tiệm Cà phê Boardgame", "Quán Cà phê check-in xịn sò"],
-    visit: ["Bảo tàng nghệ thuật đương đại", "Khu tham quan kiến trúc nổi tiếng"],
+    coffee: isStudying 
+      ? ["Quán Cà phê Yên Tĩnh Làm Việc", "Thư viện Cà Phê Không Gian Mở", "Co-working Space"] 
+      : ["Tiệm Cà phê Boardgame", "Quán Cà phê check-in xịn sò"],
+    visit: isStudying 
+      ? ["Nhà sách trung tâm", "Khu triển lãm nghệ thuật yên tĩnh"]
+      : ["Bảo tàng nghệ thuật đương đại", "Khu tham quan kiến trúc nổi tiếng"],
     shopping: ["Trung tâm thương mại lớn", "Tổ hợp Complex mua sắm giới trẻ"],
-    entertainment: ["Phòng hát Music Box / Coin Karaoke", "Khu vui chơi Playbox & Gắp gấu", "Tổ hợp Game Center", "Pub Acoustic Acoustic Chill"]
+    entertainment: isStudying
+      ? ["Đi dạo công viên hóng gió", "Quán Trà Đạo thư giãn"]
+      : ["Phòng hát Music Box / Coin Karaoke", "Khu vui chơi Playbox & Gắp gấu", "Tổ hợp Game Center", "Pub Acoustic Acoustic Chill"]
   };
 
   const getAnActivity = (category: string, index: number, dayNo: number): any => {
@@ -147,7 +156,7 @@ function generateFallbackPlan(params: {
       title: sName,
       address: `Khu vực trung tâm`,
       type: adaptedCategory,
-      description: `Ghé thăm địa điểm hấp dẫn này tại ${destination}.`,
+      description: `Ghé thăm địa điểm này. Mục đích chuyến đi: ${purpose.substring(0, 50)}...`,
       costEstimated: Math.round((adaptedCategory === 'coffee' ? 50000 : 150000) * costCoeff),
       durationMinutes: adaptedCategory === 'coffee' ? 60 : 120,
       lat: cityCoords.lat + (Math.sin(index + dayNo) * 0.015),
@@ -201,7 +210,8 @@ async function startServer() {
   app.get("/api/places", (req, res) => res.json(PRESET_PLACES));
 
   app.post("/api/generate-plan", async (req, res) => {
-    const { destination, budget = 'moderate', transportation = 'motorbike', vibe = 'friends', durationValue = 1, durationUnit = 'days', radiusKm = 10, selectedPlaces = [], weatherPreference = 'auto', generationMode = 'gemini' } = req.body;
+    // NHẬN BIẾN PURPOSE TỪ FRONTEND
+    const { destination, budget = 'moderate', transportation = 'motorbike', purpose = 'Khám phá và trải nghiệm thành phố', durationValue = 1, durationUnit = 'days', radiusKm = 10, selectedPlaces = [], weatherPreference = 'auto', generationMode = 'gemini' } = req.body;
 
     let coords = getCityCoordsAndId(destination);
     if (coords.id === "custom") {
@@ -219,18 +229,16 @@ async function startServer() {
     const aiInstance = currentApiKey ? new GoogleGenAI({ apiKey: currentApiKey }) : null;
 
     if (generationMode === 'offline' || !aiInstance || (Date.now() - lastQuotaExceededTime) < 2000) {
-      return res.json(generateFallbackPlan({ destination, budget, transportation, vibe, durationValue: Number(durationValue), durationUnit, radiusKm: Number(radiusKm), selectedPlaces, weatherInfo }));
+      return res.json(generateFallbackPlan({ destination, budget, transportation, purpose, durationValue: Number(durationValue), durationUnit, radiusKm: Number(radiusKm), selectedPlaces, weatherInfo }));
     }
 
     try {
       const selectedNames = selectedPlaces.map((p: any) => p.name).join(", ");
       
-      // 1. GỌI DỮ LIỆU THẬT TỪ OPENSTREETMAP TRƯỚC
       console.log(`[OSM Engine] Đang quét các địa điểm thực tế xung quanh ${coords.lat}, ${coords.lng}...`);
       const realCafes = await fetchOSMPlaces(coords.lat, coords.lng, Number(radiusKm), 'cafe');
       const realFood = await fetchOSMPlaces(coords.lat, coords.lng, Number(radiusKm), 'restaurant');
       
-      // Tạo chuỗi Text danh sách địa điểm thật để đưa cho AI đọc
       const realPlacesContext = `
       DANH SÁCH ĐỊA ĐIỂM CÓ THẬT TẠI KHU VỰC (Trích xuất từ Bản đồ):
       
@@ -241,25 +249,49 @@ async function startServer() {
       ${realFood.length > 0 ? realFood.map(f => `- Tên: ${f.name}, Tọa độ: ${f.lat}, ${f.lng}, Địa chỉ: ${f.address}`).join('\n') : '- Không tìm thấy data, hãy tự linh hoạt.'}
       `;
 
-      // 2. CẬP NHẬT LẠI PROMPT CHO GEMINI
+      // CẬP NHẬT PROMPT NHẬN BIẾN PURPOSE (MỤC ĐÍCH CÁ NHÂN HÓA)
       const prompt = `
-        Hãy thiết kế một chuyến đi CỰC KỲ NĂNG ĐỘNG tại: "${destination}"
+        Hãy thiết kế một lịch trình liền mạch và hợp lý.
+        
+        📍 ĐIỂM XUẤT PHÁT CỦA NGƯỜI DÙNG: "${destination}"
         - Thời lượng: ${durationValue} ${durationUnit}
         - Ngân sách: ${budget}
         - Phương tiện: ${transportation}
+        - Bán kính quét tối đa: ${radiusKm} km từ điểm xuất phát.
         
         ${realPlacesContext}
 
+        🎯 MỤC ĐÍCH VÀ YÊU CẦU CÁ NHÂN HÓA BẮT BUỘC (QUAN TRỌNG NHẤT):
+        Người dùng có yêu cầu và bối cảnh cụ thể như sau: "${purpose}".
+        - Bạn BẮT BUỘC phải thiết kế lịch trình bám sát 100% vào mục đích này. Cách lựa chọn địa điểm, phong cách viết miêu tả, và phân bổ thời gian phải giải quyết được vấn đề người dùng đặt ra. Nếu mục đích liên quan đến công việc/học tập, hãy chọn không gian yên tĩnh. Nếu có ràng buộc về thời gian rảnh, phải né các khung giờ bận.
+        - Nếu mục đích là HỌC TẬP/LÀM VIỆC: Chỉ chọn quán Cafe Yên Tĩnh, Thư viện, Không gian Co-working. Tuyệt đối loại bỏ các từ khóa liên quan đến giải trí ồn ào, bar, pub, boardgame.
+        - Nếu mục đích là GIẢI TRÍ/VUI CHƠI: Hãy ưu tiên các khu vui chơi, giải trí hiện đại xen kẽ với các hoạt động, quán ăn uống, địa điểm check-in, dạo phố.
+        - Phân bổ thời gian (durationMinutes) cho các hoạt động học tập/làm việc dài hơn bình thường (ví dụ 120 - 240 phút).
+
         MỤC TIÊU VÀ YÊU CẦU BẮT BUỘC ĐỐI VỚI BẠN:
-        1. ƯU TIÊN SỬ DỤNG TỐI ĐA các quán ăn và quán cà phê từ "DANH SÁCH ĐỊA ĐIỂM CÓ THẬT" ở trên để đưa vào lịch trình. Khi dùng chúng, BẮT BUỘC phải giữ nguyên tọa độ lat, lng.
-        2. Nếu danh sách trên thiếu các điểm VUI CHƠI GIẢI TRÍ (như Music Box, Playbox, Boardgame, Khu nghệ thuật), bạn được phép TỰ BỔ SUNG thêm nhưng phải đảm bảo tên quán có thật và tọa độ hợp lý.
-        3. Tuyệt đối KHÔNG đưa các chuỗi thương hiệu ăn nhanh nhàm chán (Lotteria, KFC, McDonald's) vào lịch trình. Tập trung vào tính "bản địa", những góc phố hay các quán nhỏ xinh xắn.
+        1. ƯU TIÊN SỬ DỤNG TỐI ĐA các quán ăn và quán cà phê từ "DANH SÁCH ĐỊA ĐIỂM CÓ THẬT" ở trên. BẮT BUỘC giữ nguyên tọa độ lat, lng.
+        2. Dựa vào "MỤC ĐÍCH VÀ YÊU CẦU CÁ NHÂN HÓA" ở trên, hãy tự động lọc và chọn ra những địa điểm thực tế phù hợp nhất. 
+        3. Nếu danh sách thật không đáp ứng được mục đích, được phép TỰ BỔ SUNG thêm nhưng phải đảm bảo tên quán CÓ THẬT tại địa phương.
         4. Trả về đúng định dạng JSON chuẩn.
+
+        // Thêm chỉ thị này vào cuối câu lệnh Prompt trong server.ts
+        "MỘT LƯU Ý SỐNG CÒN: Tuyệt đối KHÔNG đưa vào lịch trình các địa điểm nổi tiếng là đã đóng cửa vĩnh viễn hoặc tạm ngừng hoạt động trong thời gian dài. Nếu bạn không chắc chắn địa điểm đó còn hoạt động hay không, hãy ưu tiên các địa điểm có thương hiệu lớn hoặc chuỗi cửa hàng để đảm bảo trải nghiệm người dùng."
       `;
 
-      const configPayload = {
-        systemInstruction: "Bạn là Local Expert AI. Luôn trả về định dạng JSON hợp lệ. Đề xuất địa điểm có thật. Bắt buộc phải có các khu vui chơi giải trí hiện đại, music box, playbox, boardgame trong lịch trình.",
-        temperature: 0.9,
+        const configPayload = {
+        // 1. Cập nhật lại chỉ thị hệ thống để AI thích ứng theo mục đích nhập vào
+        systemInstruction: `Bạn là Local Expert AI chuyên nghiệp. Nhiệm vụ của bạn là luôn trả về định dạng JSON hợp lệ dựa trên đúng Schema yêu cầu. 
+        1. BẮT BUỘC phải phân tích kỹ mục đích chuyến đi của người dùng để lựa chọn loại hình hoạt động (type) phù hợp:
+        - Nếu mục đích là HỌC TẬP, LÀM BÀI TẬP, LÀM VIỆC: Hãy ưu tiên các hoạt động dạng 'coffee' hoặc 'visit' tại các không gian yên tĩnh, thư viện, quán cà phê làm việc. TUYỆT ĐỐI KHÔNG được đưa các hoạt động giải trí náo nhiệt, ồn ào như 'boardgame', 'playbox', 'game center', 'karaoke', 'bar', 'pub' vào lịch trình.
+        - Nếu mục đích là GIẢI TRÍ, VUI CHƠI, XẢ STRESS: Lúc này mới ưu tiên đưa các khu vui chơi, giải trí hiện đại vào hành trình.
+        2. KỶ LUẬT VỀ ĐỊNH DẠNG DỮ LIỆU (QUAN TRỌNG NHẤT):
+        - Trường 'title': CHỈ ĐƯỢC CHỨA TÊN ĐỊA ĐIỂM (Ví dụ: "Thư viện Quốc gia", "The Coffee House"). TUYỆT ĐỐI KHÔNG chèn thêm mục đích chuyến đi, cảm xúc hay bình luận vào tên.
+        - Trường 'address': CHỈ ghi địa chỉ thật, không ghi mục đích.
+        - Trường 'description': Đây là nơi DUY NHẤT bạn được phép dài dòng và giải thích lý do tại sao địa điểm này phù hợp với mục đích của người dùng.`,
+        
+        // 2. Hạ nhiệt độ sáng tạo xuống để AI tuân thủ logic chặt chẽ hơn
+        temperature: 0.7, 
+        
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -317,7 +349,7 @@ async function startServer() {
       };
 
       let response;
-      for (const modelName of ["gemini-3.1-flash-lite", "gemini-3.5-flash"]) {
+      for (const modelName of ["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-2.5-flash-lite" ]) {
         try {
           console.log(`[Local Expert Engine] Đang sáng tạo lịch trình giải trí (${modelName}) cho ${destination}...`);
           response = await aiInstance.models.generateContent({ model: modelName, contents: prompt, config: configPayload });
@@ -329,7 +361,12 @@ async function startServer() {
 
       if (!response) throw new Error("AI không phản hồi.");
 
-      const parsedData = JSON.parse(response.text || "{}");
+      // SỬA LỖI PARSE JSON: Xóa bỏ các ký tự markdown rác do AI thỉnh thoảng tự thêm vào
+      const rawText = response.text || "{}";
+      const cleanText = rawText.replace(/```json/g, "").replace(/```/g, "").trim();
+      
+      const parsedData = JSON.parse(cleanText);
+      
       parsedData.durationValue = Number(durationValue);
       parsedData.durationUnit = durationUnit;
       parsedData.radiusKm = Number(radiusKm);
@@ -337,9 +374,12 @@ async function startServer() {
 
       res.json(parsedData);
     } catch (error: any) {
+      // IN LỖI THỰC SỰ RA TERMINAL ĐỂ BẮT BỆNH
+      console.error("🚨 [CRITICAL ERROR] LỖI KHI GỌI AI HOẶC PARSE DỮ LIỆU:", error);
+      
       lastQuotaExceededTime = Date.now();
-      const fb = generateFallbackPlan({ destination, budget, transportation, vibe, durationValue: Number(durationValue), durationUnit, radiusKm: Number(radiusKm), selectedPlaces, weatherInfo });
-      fb.additionalNotes = `⚠️ Lỗi gọi AI, dùng lịch trình dự phòng. ` + fb.additionalNotes;
+      const fb = generateFallbackPlan({ destination, budget, transportation, purpose, durationValue: Number(durationValue), durationUnit, radiusKm: Number(radiusKm), selectedPlaces, weatherInfo });
+      fb.additionalNotes = `⚠️ Lỗi gọi AI (Hãy xem Terminal). Đang dùng lịch trình dự phòng. ` + fb.additionalNotes;
       return res.json(fb);
     }
   });
