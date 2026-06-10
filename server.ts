@@ -349,7 +349,7 @@ async function startServer() {
       };
 
       let response;
-      for (const modelName of ["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-2.5-flash-lite" ]) {
+      for (const modelName of ["gemini-3.1-flash-lite", "gemini-3.5-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite" ]) {
         try {
           console.log(`[Local Expert Engine] Đang sáng tạo lịch trình giải trí (${modelName}) cho ${destination}...`);
           response = await aiInstance.models.generateContent({ model: modelName, contents: prompt, config: configPayload });
