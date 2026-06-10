@@ -315,7 +315,6 @@ export default function AIPlanDisplay({ itinerary, onModifyItinerary }: AIPlanDi
                     </div>
 
                     <p className="text-xs text-neutral-500 leading-relaxed font-sans pl-9 mt-3 text-left">
-                      {activity.address ? <span className="font-semibold block mb-1">Đường/Khu vực: {activity.address}</span> : null}
                       {activity.description}
                     </p>
                   </div>
