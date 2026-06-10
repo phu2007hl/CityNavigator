@@ -23,13 +23,13 @@ export default function ItineraryMap({ activities, destination, transportation }
 
   const cityLabel = getCityQueryPrefix(destination);
 
-  // SỬA LỖI: Chỉ tra cứu Tên địa điểm + Địa chỉ chặng. Không nối đuôi điểm xuất phát.
+  // SỬA LỖI: Cú pháp tạo link tìm kiếm điểm chuẩn của Google Maps
   const getGoogleSearchUrl = (act: Activity) => {
     const fullQuery = act.address ? `${act.title}, ${act.address}` : `${act.title}, ${cityLabel}`;
     return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullQuery)}`;
   };
 
-  // SỬA LỖI: Tách biệt origin (Điểm nhập ban đầu) và destination (Chỉ dùng thông tin riêng của chặng)
+  // SỬA LỖI: Cú pháp tạo link chỉ đường chuẩn của Google Maps
   const getGoogleDirectionsUrl = (act: Activity) => {
     let mode = 'driving';
     if (transportation === 'walking') mode = 'walking';
@@ -42,7 +42,7 @@ export default function ItineraryMap({ activities, destination, transportation }
     return `https://www.google.com/maps/dir/?api=1&origin=${originParam}&destination=${destParam}&travelmode=${mode}`;
   };
 
-  // SỬA LỖI: Lộ trình tổng hợp đi qua các waypoint bằng địa chỉ độc lập
+  // SỬA LỖI: Cú pháp cho Lộ trình đi qua nhiều điểm (Waypoints)
   const getFullDayRouteUrl = () => {
     if (activities.length === 0) return '#';
     
@@ -54,7 +54,7 @@ export default function ItineraryMap({ activities, destination, transportation }
     const waysArray = activities.slice(0, -1).map(act => {
       return act.address ? `${act.title}, ${act.address}` : `${act.title}, ${cityLabel}`;
     });
-    const ways = waysArray.map(w => encodeURIComponent(w)).join('%7C'); 
+    const ways = waysArray.map(w => encodeURIComponent(w)).join('|'); 
     
     let mode = 'driving';
     if (transportation === 'walking') mode = 'walking';

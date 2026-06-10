@@ -77,6 +77,46 @@ async function getWeatherForCoords(lat: number, lng: number, cityName: string): 
   return { condition: 'sunny', temp: 29, desc: `Dự báo nắng ráo (29°C)` };
 }
 
+// Hàm gọi dữ liệu địa điểm thực tế từ Overpass API (OpenStreetMap) miễn phí
+async function fetchOSMPlaces(lat: number, lng: number, radiusKm: number, amenity: string): Promise<any[]> {
+  const radiusMeters = radiusKm * 1000;
+  // Overpass QL Query: Tìm các node có tag amenity (cafe, restaurant...) và có tên, trong bán kính N mét
+  const query = `
+    [out:json][timeout:10];
+    (
+      node["amenity"="${amenity}"]["name"](around:${radiusMeters},${lat},${lng});
+    );
+    out body 15;
+  `;
+
+  try {
+    const response = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `data=${encodeURIComponent(query)}`
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data && data.elements) {
+        return data.elements.map((el: any) => ({
+          name: el.tags.name,
+          lat: el.lat,
+          lng: el.lon,
+          type: amenity,
+          address: el.tags['addr:street'] 
+            ? `${el.tags['addr:housenumber'] || ''} ${el.tags['addr:street']}`.trim()
+            : 'Khu vực lân cận'
+        }));
+      }
+    }
+    return [];
+  } catch (err) {
+    console.error(`[OSM] Lỗi khi lấy dữ liệu ${amenity}:`, err);
+    return [];
+  }
+}
+
 function generateFallbackPlan(params: {
   destination: string, budget: string, transportation: string, vibe: string,
   durationValue: number, durationUnit: string, radiusKm: number,
@@ -87,7 +127,6 @@ function generateFallbackPlan(params: {
   const costCoeff = budget === 'cheap' ? 0.65 : budget === 'luxury' ? 2.5 : 1.2;
   const dayPlans: any[] = [];
 
-  // Bổ sung các điểm giải trí hiện đại vào chế độ ngoại tuyến
   const genericNames: Record<string, string[]> = {
     meal: ["Phố ẩm thực địa phương", "Tổ hợp ăn uống Food Court"],
     coffee: ["Tiệm Cà phê Boardgame", "Quán Cà phê check-in xịn sò"],
@@ -186,40 +225,41 @@ async function startServer() {
     try {
       const selectedNames = selectedPlaces.map((p: any) => p.name).join(", ");
       
-      const placesContext = `
-      TÌNH TRẠNG HIỆN TẠI: BẠN ĐÓNG VAI TRÒ LÀ CHUYÊN GIA DU LỊCH BẢN ĐỊA (LOCAL EXPERT).
+      // 1. GỌI DỮ LIỆU THẬT TỪ OPENSTREETMAP TRƯỚC
+      console.log(`[OSM Engine] Đang quét các địa điểm thực tế xung quanh ${coords.lat}, ${coords.lng}...`);
+      const realCafes = await fetchOSMPlaces(coords.lat, coords.lng, Number(radiusKm), 'cafe');
+      const realFood = await fetchOSMPlaces(coords.lat, coords.lng, Number(radiusKm), 'restaurant');
       
-      YÊU CẦU BẮT BUỘC ĐỐI VỚI DỮ LIỆU ĐỊA ĐIỂM:
-      1. Địa điểm phải là những nơi có thật, đang hoạt động và phù hợp với vibe giới trẻ năng động. KHÔNG ĐƯỢC LÀM RA CÁC ĐỊA ĐIỂM GIẢ TẠO HOẶC NHÀM CHÁN.
-      2. Tên quán phải là tên riêng cụ thể có thật (Ví dụ: "Timezone", "Lotte Mall", "TiniWorld", "Acoustic Bar").
-      3. Địa chỉ ngắn gọn: CHỈ ghi tên đường hoặc phường/quận.
-      4. Tọa độ chính xác: "lat", "lng" sát thực tế nhất.
-      5. Khoảng cách: Các điểm đến không được nằm cách tâm ${destination} quá ${radiusKm}km.`;
+      // Tạo chuỗi Text danh sách địa điểm thật để đưa cho AI đọc
+      const realPlacesContext = `
+      DANH SÁCH ĐỊA ĐIỂM CÓ THẬT TẠI KHU VỰC (Trích xuất từ Bản đồ):
+      
+      ☕ Quán Cà phê/Đồ uống:
+      ${realCafes.length > 0 ? realCafes.map(c => `- Tên: ${c.name}, Tọa độ: ${c.lat}, ${c.lng}, Địa chỉ: ${c.address}`).join('\n') : '- Không tìm thấy data, hãy tự linh hoạt.'}
+      
+      🍜 Quán Ăn:
+      ${realFood.length > 0 ? realFood.map(f => `- Tên: ${f.name}, Tọa độ: ${f.lat}, ${f.lng}, Địa chỉ: ${f.address}`).join('\n') : '- Không tìm thấy data, hãy tự linh hoạt.'}
+      `;
 
-      // ĐÂY LÀ ĐOẠN PROMPT MỚI ÉP AI TẠO RA CÁC ĐIỂM VUI CHƠI GIỚI TRẺ
+      // 2. CẬP NHẬT LẠI PROMPT CHO GEMINI
       const prompt = `
-        Hãy thiết kế một chuyến đi CỰC KỲ NĂNG ĐỘNG VÀ ĐA DẠNG tại: "${destination}"
+        Hãy thiết kế một chuyến đi CỰC KỲ NĂNG ĐỘNG tại: "${destination}"
         - Thời lượng: ${durationValue} ${durationUnit}
         - Ngân sách: ${budget}
         - Phương tiện: ${transportation}
         
-        ${placesContext}
+        ${realPlacesContext}
 
-        MỤC TIÊU TỐI THƯỢNG CỦA LỊCH TRÌNH:
-        Lịch trình tuyệt đối KHÔNG ĐƯỢC chỉ tập trung vào ăn uống và đi ngắm cảnh nhàm chán.
-        Trong mỗi ngày, bạn BẮT BUỘC phải đan xen ít nhất 1 đến 2 hoạt động vui chơi giải trí hiện đại của giới trẻ. 
-        Hãy chủ động tìm kiếm và đưa vào các địa điểm như:
-        - Các trạm hát Music Box / Coin Karaoke trong các TTTM.
-        - Các khu vui chơi tổng hợp như Playbox, Timezone, Game Center (bắn cung, gắp gấu, trượt băng, bowling).
-        - Các tổ hợp nghệ thuật, Workshop làm bánh/gốm, quán Cafe Boardgame.
-        - Các quán Pub, Lounge hoặc tiệm cafe có hát Acoustic Live Music vào buổi tối.
-        
-        Hãy cấu trúc lịch trình sao cho năng động, trẻ trung, xen kẽ giữa ăn uống, vui chơi và quẩy hết mình! Phản hồi bằng JSON.
+        MỤC TIÊU VÀ YÊU CẦU BẮT BUỘC ĐỐI VỚI BẠN:
+        1. ƯU TIÊN SỬ DỤNG TỐI ĐA các quán ăn và quán cà phê từ "DANH SÁCH ĐỊA ĐIỂM CÓ THẬT" ở trên để đưa vào lịch trình. Khi dùng chúng, BẮT BUỘC phải giữ nguyên tọa độ lat, lng.
+        2. Nếu danh sách trên thiếu các điểm VUI CHƠI GIẢI TRÍ (như Music Box, Playbox, Boardgame, Khu nghệ thuật), bạn được phép TỰ BỔ SUNG thêm nhưng phải đảm bảo tên quán có thật và tọa độ hợp lý.
+        3. Tuyệt đối KHÔNG đưa các chuỗi thương hiệu ăn nhanh nhàm chán (Lotteria, KFC, McDonald's) vào lịch trình. Tập trung vào tính "bản địa", những góc phố hay các quán nhỏ xinh xắn.
+        4. Trả về đúng định dạng JSON chuẩn.
       `;
 
       const configPayload = {
         systemInstruction: "Bạn là Local Expert AI. Luôn trả về định dạng JSON hợp lệ. Đề xuất địa điểm có thật. Bắt buộc phải có các khu vui chơi giải trí hiện đại, music box, playbox, boardgame trong lịch trình.",
-        temperature: 0.9, // Tăng độ sáng tạo lên tối đa
+        temperature: 0.9,
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -246,7 +286,7 @@ async function startServer() {
                         time: { type: Type.STRING },
                         title: { type: Type.STRING },
                         address: { type: Type.STRING },
-                        type: { type: Type.STRING, description: "Phân loại hoạt động: 'meal', 'visit', 'coffee', 'entertainment' (vui chơi, hát hò, pub, boardgame), 'shopping'" },
+                        type: { type: Type.STRING, description: "Phân loại hoạt động: 'meal', 'visit', 'coffee', 'entertainment', 'shopping'" },
                         description: { type: Type.STRING },
                         costEstimated: { type: Type.INTEGER },
                         durationMinutes: { type: Type.INTEGER },
