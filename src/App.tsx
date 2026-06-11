@@ -60,6 +60,9 @@ export default function App() {
   const [newPlaceVideoUrl, setNewPlaceVideoUrl] = useState('');
   const [formSuccessMsg, setFormSuccessMsg] = useState('');
 
+  // ── State quản lý cách up ảnh ──
+  const [imageUploadMethod, setImageUploadMethod] = useState<'url' | 'file'>('url');
+
   // ── State quản lý vòng lặp slideshow ảnh nền Header ──
   const headerImages = [ cao2];
   const [currentBgIndex, setCurrentBgIndex] = useState(0);
@@ -121,6 +124,19 @@ export default function App() {
 
   const handleClearSelectedBasket = () => setAddedIds([]);
 
+  // Hàm xử lý khi người dùng chọn file ảnh từ máy
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        // Chuyển file thành chuỗi Base64 để có thể lưu vào localStorage
+        setNewPlaceImage(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleSubmitCustomPlace = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newPlaceName.trim()) { alert('Vui lòng nhập tên địa điểm.'); return; }
@@ -156,6 +172,7 @@ export default function App() {
     });
     setNewPlaceName(''); setNewPlaceAddress(''); setNewPlaceDesc('');
     setNewPlaceChannel(''); setNewPlaceVideoUrl(''); setNewPlaceImage('');
+    setImageUploadMethod('url');
     setFormSuccessMsg('🎉 Thêm địa điểm thành công!');
     setTimeout(() => setFormSuccessMsg(''), 4000);
   };
@@ -358,6 +375,53 @@ export default function App() {
                   <label className="block text-[10px] font-black text-orange-600 uppercase mb-1">Khoảng Giá</label>
                   <input type="text" placeholder="50k - 100k" value={newPlacePrice} onChange={e => setNewPlacePrice(e.target.value)} className={sidebarInput} />
                 </div>
+
+                {/* --- THÊM PHẦN NHẬP ẢNH TẠI ĐÂY --- */}
+                <div>
+                  <label className="block text-[10px] font-black text-orange-600 uppercase mb-1">Ảnh Đại Diện</label>
+                  <div className="flex gap-2 mb-2">
+                    <button 
+                      type="button" 
+                      onClick={() => setImageUploadMethod('url')} 
+                      className={`flex-1 text-[10px] py-1.5 rounded-lg border-2 transition-colors cursor-pointer ${imageUploadMethod === 'url' ? 'bg-orange-100 border-orange-400 font-bold text-orange-700' : 'bg-gray-50 border-gray-200 text-gray-500'}`}
+                    >
+                      Dùng Link (URL)
+                    </button>
+                    <button 
+                      type="button" 
+                      onClick={() => setImageUploadMethod('file')} 
+                      className={`flex-1 text-[10px] py-1.5 rounded-lg border-2 transition-colors cursor-pointer ${imageUploadMethod === 'file' ? 'bg-orange-100 border-orange-400 font-bold text-orange-700' : 'bg-gray-50 border-gray-200 text-gray-500'}`}
+                    >
+                      Tải từ máy (File)
+                    </button>
+                  </div>
+                  
+                  {imageUploadMethod === 'url' ? (
+                    <input 
+                      type="text" 
+                      placeholder="https://..." 
+                      value={newPlaceImage.startsWith('data:image') ? '' : newPlaceImage} 
+                      onChange={e => setNewPlaceImage(e.target.value)} 
+                      className={sidebarInput} 
+                    />
+                  ) : (
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      onChange={handleFileChange} 
+                      className={`${sidebarInput} p-1 text-xs file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-bold file:bg-orange-100 file:text-orange-700 hover:file:bg-orange-200 cursor-pointer`} 
+                    />
+                  )}
+
+                  {/* Hiển thị ảnh preview thu nhỏ nếu đã có ảnh */}
+                  {newPlaceImage && (
+                    <div className="mt-2 h-20 w-full rounded-xl overflow-hidden border-2 border-orange-100 bg-gray-50 relative">
+                      <img src={newPlaceImage} alt="Preview" className="w-full h-full object-cover" />
+                    </div>
+                  )}
+                </div>
+                {/* --- KẾT THÚC PHẦN NHẬP ẢNH --- */}
+
                 <div>
                   <label className="block text-[10px] font-black text-orange-600 uppercase mb-1">Cảm Nhận Nhanh</label>
                   <textarea rows={2} placeholder="Nhập cảm nhận..." value={newPlaceDesc} onChange={e => setNewPlaceDesc(e.target.value)} className={sidebarInput} />
