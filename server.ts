@@ -121,7 +121,7 @@ function generateFallbackPlan(params: {
   durationValue: number, durationUnit: string, radiusKm: number,
   selectedPlaces: any[], weatherInfo: { condition: 'sunny' | 'rainy' | 'hot', temp: number, desc: string }
 }) {
-  const { destination, budget, transportation, purpose, durationValue, durationUnit, radiusKm, weatherInfo } = params;
+  const { destination, budget, transportation, purpose, durationValue, durationUnit, radiusKm, selectedPlaces, weatherInfo } = params;
   const cityCoords = getCityCoordsAndId(destination);
   const costCoeff = budget === 'cheap' ? 0.65 : budget === 'luxury' ? 2.5 : 1.2;
   const dayPlans: any[] = [];
@@ -169,8 +169,28 @@ function generateFallbackPlan(params: {
     const numActs = Math.min(6, Math.max(1, Math.round(hoursCount / 2)));
     const activities: any[] = [];
     let currentHour = 8;
+    let selectedPlaceIndex = 0; // Index để duyệt qua các địa điểm đã chọn
+    
     for (let i = 0; i < numActs; i++) {
-      const act = getAnActivity(['visit', 'coffee', 'meal', 'entertainment'][i%4], i, 1);
+      let act;
+      // Ưu tiên nhét địa điểm trong giỏ vào trước
+      if (selectedPlaces && selectedPlaceIndex < selectedPlaces.length) {
+        const sp = selectedPlaces[selectedPlaceIndex];
+        act = {
+          title: sp.name,
+          address: sp.address || 'Đã chọn từ giỏ',
+          type: sp.category || 'visit',
+          description: `(Địa điểm bạn đã chọn) ${sp.description || ''}`,
+          costEstimated: 50000,
+          durationMinutes: 90,
+          lat: sp.lat,
+          lng: sp.lng
+        };
+        selectedPlaceIndex++;
+      } else {
+        act = getAnActivity(['visit', 'coffee', 'meal', 'entertainment'][i%4], i, 1);
+      }
+
       const nextHour = currentHour + (act.durationMinutes / 60);
       act.time = `${Math.floor(currentHour)}:00 - ${Math.floor(nextHour)}:00`;
       act.transportToNext = { method: transportation, durationMinutes: 15, distanceKm: 2.5, costEstimated: 20000 };
@@ -266,6 +286,14 @@ async function startServer() {
     try {
       const selectedNames = selectedPlaces.map((p: any) => p.name).join(", ");
       
+      // 1. CHUẨN BỊ DATA CÁC ĐỊA ĐIỂM NGƯỜI DÙNG ĐÃ CHỌN TỪ GIỎ
+      let selectedPlacesContext = "- Người dùng chưa chọn địa điểm cụ thể nào.";
+      if (selectedPlaces && selectedPlaces.length > 0) {
+        selectedPlacesContext = selectedPlaces.map((p: any) => 
+          `- Tên: ${p.name}\n  + Loại: ${p.category || 'visit'}\n  + Địa chỉ: ${p.address || 'Đang cập nhật'}\n  + Tọa độ: ${p.lat}, ${p.lng}`
+        ).join('\n\n');
+      }
+
       console.log(`[OSM Engine] Đang quét các địa điểm thực tế xung quanh ${coords.lat}, ${coords.lng}...`);
       const realCafes = await fetchOSMPlaces(coords.lat, coords.lng, Number(radiusKm), 'cafe');
       const realFood = await fetchOSMPlaces(coords.lat, coords.lng, Number(radiusKm), 'restaurant');
@@ -280,7 +308,7 @@ async function startServer() {
       ${realFood.length > 0 ? realFood.map(f => `- Tên: ${f.name}, Tọa độ: ${f.lat}, ${f.lng}, Địa chỉ: ${f.address}`).join('\n') : '- Không tìm thấy data, hãy tự linh hoạt.'}
       `;
 
-      // CẬP NHẬT PROMPT NHẬN BIẾN PURPOSE (MỤC ĐÍCH CÁ NHÂN HÓA)
+      // CẬP NHẬT PROMPT NHẬN BIẾN PURPOSE VÀ ĐỊA ĐIỂM ĐÃ CHỌN TỪ GIỎ
       const prompt = `
         Hãy thiết kế một lịch trình du lịch/ăn chơi liền mạch, hợp lý và cá nhân hóa cao.
 
@@ -294,6 +322,11 @@ async function startServer() {
         🏍️  Phương tiện   : ${transportation === 'motorbike' ? 'Xe máy' : transportation === 'taxi' ? 'Ô tô / Grab' : 'Đi bộ'}
         📏 Bán kính       : ≤ ${radiusKm} km từ điểm xuất phát
         🌤️  Thời tiết     : ${weatherInfo.desc}
+
+        ════════════════════════════════════════
+        ⭐ ĐỊA ĐIỂM ĐÃ CHỌN TỪ GIỎ (BẮT BUỘC PHẢI CÓ TRONG LỊCH TRÌNH)
+        ════════════════════════════════════════
+        ${selectedPlacesContext}
 
         ════════════════════════════════════════
         🎯 MỤC ĐÍCH & YÊU CẦU CỤ THỂ (ƯU TIÊN SỐ 1)
@@ -315,21 +348,21 @@ async function startServer() {
         - Khung giờ của activity phải nằm TRONG khoảng ${startTime}–${endTime}, không được trước hoặc sau.
 
         ════════════════════════════════════════
-        🗺️  DANH SÁCH ĐỊA ĐIỂM THỰC TẾ (OSM)
+        🗺️  DANH SÁCH ĐỊA ĐIỂM THỰC TẾ (OSM) CHỈ DÙNG ĐỂ BỔ SUNG
         ════════════════════════════════════════
         ${realPlacesContext}
 
         ════════════════════════════════════════
         📌 QUY TẮC BẮT BUỘC
         ════════════════════════════════════════
-        1. ƯU TIÊN địa điểm từ danh sách OSM thực tế; giữ nguyên lat/lng.
-        2. Nếu OSM thiếu, tự bổ sung nhưng phải là tên quán CÓ THẬT tại địa phương.
+        1. BẮT BUỘC đưa TẤT CẢ các "ĐỊA ĐIỂM ĐÃ CHỌN TỪ GIỎ" vào lịch trình và sắp xếp thời gian hợp lý nhất. Trữ lại đúng lat/lng của chúng.
+        2. Nếu còn trống thời gian, mới lấy thêm địa điểm từ danh sách OSM hoặc tự bổ sung nhưng phải là tên quán CÓ THẬT tại địa phương.
         3. TUYỆT ĐỐI không đưa vào địa điểm đã đóng cửa hoặc không còn hoạt động.
         4. field 'time' phải theo format "HH:MM" (giờ bắt đầu activity).
         5. Trả về JSON hợp lệ, không có markdown code block.
       `;
 
-        const configPayload = {
+      const configPayload = {
         // 1. Cập nhật lại chỉ thị hệ thống để AI thích ứng theo mục đích nhập vào
         systemInstruction: `Bạn là Local Expert AI chuyên nghiệp về du lịch và ăn chơi tại Việt Nam. Nhiệm vụ: trả về JSON hợp lệ theo schema yêu cầu.
 
@@ -341,8 +374,9 @@ NGUYÊN TẮC BẮT BUỘC:
    - HỌC TẬP/LÀM VIỆC: cafe yên tĩnh, thư viện, co-working; slot 90-240 phút; KHÔNG karaoke/bar/boardgame.
    - GIẢI TRÍ/VUI CHƠI: xen kẽ ăn, check-in, music box, boardgame, karaoke, gamebox, trung tâm thương mại, cafe trending. Cần đa dạng các loại hình hoạt động.
    - ĂN UỐNG: ưu tiên quán ngon địa phương, spacing bữa hợp lý.
-5. FIELD RULES - title: CHỈ tên địa điểm; address: chỉ địa chỉ; description: giải thích lý do phù hợp mục đích và nhóm.
-6. KHÔNG đưa vào địa điểm đã đóng cửa. Ưu tiên chuỗi lớn nếu không chắc.`,
+5. ĐỊA ĐIỂM CHỌN TRƯỚC: Tuyệt đối phải xếp các địa điểm người dùng đã bỏ vào giỏ vào lịch trình.
+6. FIELD RULES - title: CHỈ tên địa điểm; address: chỉ địa chỉ; description: giải thích lý do phù hợp mục đích và nhóm.
+7. KHÔNG đưa vào địa điểm đã đóng cửa. Ưu tiên chuỗi lớn nếu không chắc.`,
         
         // 2. Hạ nhiệt độ sáng tạo xuống để AI tuân thủ logic chặt chẽ hơn
         temperature: 0.7, 
