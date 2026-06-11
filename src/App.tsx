@@ -275,7 +275,7 @@ export default function App() {
                   { id: 'hanoi', name: 'Hà Nội' },
                   { id: 'dalat', name: 'Đà Lạt' },
                   { id: 'saigon', name: 'Hồ Chí Minh' },
-                  { id: 'danang', name: 'Huế' },
+                  { id: 'danang', name: 'Đà Nẵng' },
                 ].map(city => (
                   <button
                     key={city.id}
