@@ -1,5 +1,7 @@
 import { Place } from './types';
 
+
+
 export const VIETNAM_CITIES = [
   { id: 'hanoi', name: 'Hà Nội', region: 'Miền Bắc' },
   { id: 'saigon', name: 'TP. Hồ Chí Minh', region: 'Miền Nam' },

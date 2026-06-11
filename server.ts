@@ -211,7 +211,38 @@ async function startServer() {
 
   app.post("/api/generate-plan", async (req, res) => {
     // NHẬN BIẾN PURPOSE TỪ FRONTEND
-    const { destination, budget = 'moderate', transportation = 'motorbike', purpose = 'Khám phá và trải nghiệm thành phố', durationValue = 1, durationUnit = 'days', radiusKm = 10, selectedPlaces = [], weatherPreference = 'auto', generationMode = 'gemini' } = req.body;
+    const {
+      destination,
+      budget = 'moderate',
+      budgetVnd = 0,
+      groupSize = '3-5',
+      transportation = 'motorbike',
+      purpose = 'Khám phá và trải nghiệm thành phố',
+      durationValue = 1,
+      durationUnit = 'hours',
+      startTime = '08:00',
+      endTime = '22:00',
+      radiusKm = 10,
+      selectedPlaces = [],
+      weatherPreference = 'auto',
+      generationMode = 'gemini'
+    } = req.body;
+
+    // Derive a human-readable budget label for the prompt
+    const budgetVndNum = Number(budgetVnd) || 0;
+    const budgetLabel = budgetVndNum > 0
+      ? `${budgetVndNum.toLocaleString('vi-VN')}đ (phân loại: ${budget === 'cheap' ? 'Tiết kiệm' : budget === 'luxury' ? 'Cao cấp' : 'Trung bình'})`
+      : (budget === 'cheap' ? 'Tiết kiệm' : budget === 'luxury' ? 'Cao cấp' : 'Trung bình');
+
+    // Human-readable group size
+    const groupSizeLabel: Record<string, string> = {
+      '1': '1 người (Solo)',
+      '2': '2 người (Cặp đôi)',
+      '3-5': '3–5 người (Nhóm bạn nhỏ)',
+      '6-10': '6–10 người (Nhóm lớn)',
+      '10+': 'Trên 10 người (Đoàn đông)',
+    };
+    const groupLabel = groupSizeLabel[groupSize] || groupSize;
 
     let coords = getCityCoordsAndId(destination);
     if (coords.id === "custom") {
@@ -251,43 +282,67 @@ async function startServer() {
 
       // CẬP NHẬT PROMPT NHẬN BIẾN PURPOSE (MỤC ĐÍCH CÁ NHÂN HÓA)
       const prompt = `
-        Hãy thiết kế một lịch trình liền mạch và hợp lý.
-        
-        📍 ĐIỂM XUẤT PHÁT CỦA NGƯỜI DÙNG: "${destination}"
-        - Thời lượng: ${durationValue} ${durationUnit}
-        - Ngân sách: ${budget}
-        - Phương tiện: ${transportation}
-        - Bán kính quét tối đa: ${radiusKm} km từ điểm xuất phát.
-        
+        Hãy thiết kế một lịch trình du lịch/ăn chơi liền mạch, hợp lý và cá nhân hóa cao.
+
+        ════════════════════════════════════════
+        📋 THÔNG TIN CHUYẾN ĐI
+        ════════════════════════════════════════
+        📍 Điểm xuất phát : ${destination}
+        👥 Số lượng người : ${groupLabel}
+        🕐 Khung giờ      : ${startTime} → ${endTime} (tổng ~${durationValue} giờ, chỉ lên lịch trong khung giờ này)
+        💰 Ngân sách      : ${budgetLabel} (TỔNG cho toàn bộ chuyến, chia đều cho ${groupLabel})
+        🏍️  Phương tiện   : ${transportation === 'motorbike' ? 'Xe máy' : transportation === 'taxi' ? 'Ô tô / Grab' : 'Đi bộ'}
+        📏 Bán kính       : ≤ ${radiusKm} km từ điểm xuất phát
+        🌤️  Thời tiết     : ${weatherInfo.desc}
+
+        ════════════════════════════════════════
+        🎯 MỤC ĐÍCH & YÊU CẦU CỤ THỂ (ƯU TIÊN SỐ 1)
+        ════════════════════════════════════════
+        "${purpose}"
+
+        → Toàn bộ lịch trình PHẢI phục vụ mục đích trên. Cụ thể:
+        • - Nếu có HỌC TẬP/LÀM VIỆC: cafe yên tĩnh, thư viện, co-working; slot 90-240 phút; KHÔNG karaoke/bar/boardgame.
+          - Nếu có GIẢI TRÍ/VUI CHƠI: xen kẽ ăn, check-in, music box, boardgame, karaoke, gamebox, trung tâm thương mại, cafe trending. Cần đa dạng các loại hình hoạt động.
+          - Nếu có ĂN UỐNG: ưu tiên quán ngon địa phương, spacing bữa hợp lý.
+        • Nếu mục đích đề cập NHÓM ĐÔNG (${groupLabel}): chọn địa điểm đủ chỗ ngồi, có thực đơn đa dạng, bàn nhóm.
+
+        ════════════════════════════════════════
+        💡 NGUYÊN TẮC PHÂN BỔ NGÂN SÁCH
+        ════════════════════════════════════════
+        - Tổng chi phí (totalCost) PHẢI ≤ ${budgetVndNum > 0 ? budgetVndNum.toLocaleString('vi-VN') + 'đ' : 'ngân sách hợp lý'}.
+        - Mỗi activity có costEstimated là CHI PHÍ MỘT NGƯỜI. Ghi chú trong description nếu chi phí thay đổi theo nhóm.
+        - Ưu tiên địa điểm miễn phí / giá thấp nếu ngân sách ở mức Tiết kiệm.
+        - Khung giờ của activity phải nằm TRONG khoảng ${startTime}–${endTime}, không được trước hoặc sau.
+
+        ════════════════════════════════════════
+        🗺️  DANH SÁCH ĐỊA ĐIỂM THỰC TẾ (OSM)
+        ════════════════════════════════════════
         ${realPlacesContext}
 
-        🎯 MỤC ĐÍCH VÀ YÊU CẦU CÁ NHÂN HÓA BẮT BUỘC (QUAN TRỌNG NHẤT):
-        Người dùng có yêu cầu và bối cảnh cụ thể như sau: "${purpose}".
-        - Bạn BẮT BUỘC phải thiết kế lịch trình bám sát 100% vào mục đích này. Cách lựa chọn địa điểm, phong cách viết miêu tả, và phân bổ thời gian phải giải quyết được vấn đề người dùng đặt ra. Nếu mục đích liên quan đến công việc/học tập, hãy chọn không gian yên tĩnh. Nếu có ràng buộc về thời gian rảnh, phải né các khung giờ bận.
-        - Nếu mục đích là HỌC TẬP/LÀM VIỆC: Chỉ chọn quán Cafe Yên Tĩnh, Thư viện, Không gian Co-working. Tuyệt đối loại bỏ các từ khóa liên quan đến giải trí ồn ào, bar, pub, boardgame.
-        - Nếu mục đích là GIẢI TRÍ/VUI CHƠI: Hãy ưu tiên các khu vui chơi, giải trí hiện đại xen kẽ với các hoạt động, quán ăn uống, địa điểm check-in, dạo phố.
-        - Phân bổ thời gian (durationMinutes) cho các hoạt động học tập/làm việc dài hơn bình thường (ví dụ 120 - 240 phút).
-
-        MỤC TIÊU VÀ YÊU CẦU BẮT BUỘC ĐỐI VỚI BẠN:
-        1. ƯU TIÊN SỬ DỤNG TỐI ĐA các quán ăn và quán cà phê từ "DANH SÁCH ĐỊA ĐIỂM CÓ THẬT" ở trên. BẮT BUỘC giữ nguyên tọa độ lat, lng.
-        2. Dựa vào "MỤC ĐÍCH VÀ YÊU CẦU CÁ NHÂN HÓA" ở trên, hãy tự động lọc và chọn ra những địa điểm thực tế phù hợp nhất. 
-        3. Nếu danh sách thật không đáp ứng được mục đích, được phép TỰ BỔ SUNG thêm nhưng phải đảm bảo tên quán CÓ THẬT tại địa phương.
-        4. Trả về đúng định dạng JSON chuẩn.
-
-        // Thêm chỉ thị này vào cuối câu lệnh Prompt trong server.ts
-        "MỘT LƯU Ý SỐNG CÒN: Tuyệt đối KHÔNG đưa vào lịch trình các địa điểm nổi tiếng là đã đóng cửa vĩnh viễn hoặc tạm ngừng hoạt động trong thời gian dài. Nếu bạn không chắc chắn địa điểm đó còn hoạt động hay không, hãy ưu tiên các địa điểm có thương hiệu lớn hoặc chuỗi cửa hàng để đảm bảo trải nghiệm người dùng."
+        ════════════════════════════════════════
+        📌 QUY TẮC BẮT BUỘC
+        ════════════════════════════════════════
+        1. ƯU TIÊN địa điểm từ danh sách OSM thực tế; giữ nguyên lat/lng.
+        2. Nếu OSM thiếu, tự bổ sung nhưng phải là tên quán CÓ THẬT tại địa phương.
+        3. TUYỆT ĐỐI không đưa vào địa điểm đã đóng cửa hoặc không còn hoạt động.
+        4. field 'time' phải theo format "HH:MM" (giờ bắt đầu activity).
+        5. Trả về JSON hợp lệ, không có markdown code block.
       `;
 
         const configPayload = {
         // 1. Cập nhật lại chỉ thị hệ thống để AI thích ứng theo mục đích nhập vào
-        systemInstruction: `Bạn là Local Expert AI chuyên nghiệp. Nhiệm vụ của bạn là luôn trả về định dạng JSON hợp lệ dựa trên đúng Schema yêu cầu. 
-        1. BẮT BUỘC phải phân tích kỹ mục đích chuyến đi của người dùng để lựa chọn loại hình hoạt động (type) phù hợp:
-        - Nếu mục đích là HỌC TẬP, LÀM BÀI TẬP, LÀM VIỆC: Hãy ưu tiên các hoạt động dạng 'coffee' hoặc 'visit' tại các không gian yên tĩnh, thư viện, quán cà phê làm việc. TUYỆT ĐỐI KHÔNG được đưa các hoạt động giải trí náo nhiệt, ồn ào như 'boardgame', 'playbox', 'game center', 'karaoke', 'bar', 'pub' vào lịch trình.
-        - Nếu mục đích là GIẢI TRÍ, VUI CHƠI, XẢ STRESS: Lúc này mới ưu tiên đưa các khu vui chơi, giải trí hiện đại vào hành trình.
-        2. KỶ LUẬT VỀ ĐỊNH DẠNG DỮ LIỆU (QUAN TRỌNG NHẤT):
-        - Trường 'title': CHỈ ĐƯỢC CHỨA TÊN ĐỊA ĐIỂM (Ví dụ: "Thư viện Quốc gia", "The Coffee House"). TUYỆT ĐỐI KHÔNG chèn thêm mục đích chuyến đi, cảm xúc hay bình luận vào tên.
-        - Trường 'address': CHỈ ghi địa chỉ thật, không ghi mục đích.
-        - Trường 'description': Đây là nơi DUY NHẤT bạn được phép dài dòng và giải thích lý do tại sao địa điểm này phù hợp với mục đích của người dùng.`,
+        systemInstruction: `Bạn là Local Expert AI chuyên nghiệp về du lịch và ăn chơi tại Việt Nam. Nhiệm vụ: trả về JSON hợp lệ theo schema yêu cầu.
+
+NGUYÊN TẮC BẮT BUỘC:
+1. KHUNG GIỜ: Tất cả activity phải nằm trong khung giờ người dùng chỉ định. Không xếp lịch trước giờ bắt đầu hoặc sau giờ kết thúc. Field 'time' format "HH:MM".
+2. NGÂN SÁCH: Tổng costEstimated của tất cả activities PHẢI nằm trong ngân sách. costEstimated là chi phí PER PERSON.
+3. SỐ NGƯỜI: Gợi ý địa điểm đủ chỗ cho nhóm, điều chỉnh loại hình hoạt động phù hợp quy mô.
+4. MỤC ĐÍCH:
+   - HỌC TẬP/LÀM VIỆC: cafe yên tĩnh, thư viện, co-working; slot 90-240 phút; KHÔNG karaoke/bar/boardgame.
+   - GIẢI TRÍ/VUI CHƠI: xen kẽ ăn, check-in, music box, boardgame, karaoke, gamebox, trung tâm thương mại, cafe trending. Cần đa dạng các loại hình hoạt động.
+   - ĂN UỐNG: ưu tiên quán ngon địa phương, spacing bữa hợp lý.
+5. FIELD RULES - title: CHỈ tên địa điểm; address: chỉ địa chỉ; description: giải thích lý do phù hợp mục đích và nhóm.
+6. KHÔNG đưa vào địa điểm đã đóng cửa. Ưu tiên chuỗi lớn nếu không chắc.`,
         
         // 2. Hạ nhiệt độ sáng tạo xuống để AI tuân thủ logic chặt chẽ hơn
         temperature: 0.7, 

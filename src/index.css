@@ -1,48 +1,119 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Inter:wght@400;500;600&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-sans: "Nunito", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --color-brand-orange: #F97316;
+  --color-brand-orange-dark: #EA6A00;
+  --color-brand-orange-light: #FED7AA;
+  --color-brand-yellow: #FEF3C7;
+  --color-brand-teal: #2DD4BF;
+  --color-sidebar-bg: #FFF7ED;
+  --color-sidebar-border: #FDBA74;
+}
+
+body {
+  background: linear-gradient(135deg, #FFF7ED 0%, #FFFBF0 50%, #F0FDF4 100%);
+  min-height: 100vh;
 }
 
 @layer utilities {
   .animate-fade-in-up {
-    animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    animation: fadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   }
-  
   .animate-fade-in {
-    animation: fadeIn 0.4s ease-out forwards;
+    animation: fadeIn 0.35s ease-out forwards;
   }
-
   .animate-pop-in {
     animation: popIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  .animate-bounce-in {
+    animation: bounceIn 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97) forwards;
+  }
+  .btn-orange {
+    background: linear-gradient(135deg, #F97316 0%, #EA580C 100%);
+    color: white;
+    font-weight: 800;
+    border-radius: 12px;
+    transition: all 0.2s;
+    box-shadow: 0 4px 12px rgba(249, 115, 22, 0.35);
+  }
+  .btn-orange:hover {
+    background: linear-gradient(135deg, #EA580C 0%, #C2410C 100%);
+    box-shadow: 0 6px 16px rgba(249, 115, 22, 0.45);
+    transform: translateY(-1px);
+  }
+  .btn-teal {
+    background: linear-gradient(135deg, #14B8A6 0%, #0D9488 100%);
+    color: white;
+    font-weight: 800;
+    border-radius: 12px;
+    transition: all 0.2s;
+    box-shadow: 0 4px 12px rgba(20, 184, 166, 0.35);
+  }
+  .card-place {
+    background: white;
+    border-radius: 20px;
+    border: 2px solid #FED7AA;
+    box-shadow: 0 4px 16px rgba(249, 115, 22, 0.1);
+    transition: all 0.25s ease;
+  }
+  .card-place:hover {
+    border-color: #F97316;
+    box-shadow: 0 8px 28px rgba(249, 115, 22, 0.2);
+    transform: translateY(-4px);
+  }
+  .sidebar-panel {
+    background: white;
+    border-radius: 20px;
+    border: 2px solid #FED7AA;
+    box-shadow: 0 4px 16px rgba(249, 115, 22, 0.08);
+  }
+  .tab-active {
+    background: linear-gradient(135deg, #F97316 0%, #EA580C 100%);
+    color: white;
+    box-shadow: 0 3px 10px rgba(249, 115, 22, 0.4);
+  }
+  .tab-inactive {
+    background: white;
+    color: #6B7280;
+    border: 2px solid #E5E7EB;
+  }
+  .orange-badge {
+    background: linear-gradient(135deg, #FFF7ED 0%, #FEF3C7 100%);
+    border: 1.5px solid #FED7AA;
+    color: #C2410C;
+    border-radius: 8px;
+    padding: 3px 10px;
+    font-weight: 700;
+    font-size: 12px;
   }
 }
 
 @keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
 }
-
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
 }
-
 @keyframes popIn {
-  from {
-    opacity: 0;
-    transform: scale(0.95) translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
+  from { opacity: 0; transform: scale(0.93) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
 }
+@keyframes bounceIn {
+  0% { transform: scale(0.8); opacity: 0; }
+  60% { transform: scale(1.05); opacity: 1; }
+  100% { transform: scale(1); }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #FFF7ED; border-radius: 8px; }
+::-webkit-scrollbar-thumb { background: #FDBA74; border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: #F97316; }
+
+/* Star rating color */
+.star-filled { color: #F59E0B; }

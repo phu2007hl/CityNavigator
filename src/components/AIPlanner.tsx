@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Sparkles, CircleDollarSign, Bike, Navigation, MapPin, 
-  RefreshCw, CheckCircle2, AlertCircle, BookmarkCheck, Heart, User,
-  CloudSun, CloudRain, ThermometerSun, Trash2
+  Sparkles, RefreshCw, AlertCircle, BookmarkCheck, Bike, Car, Footprints
 } from 'lucide-react';
 import { Place, Itinerary, BudgetLevel } from '../types';
 import AIPlanDisplay from './AIPlanDisplay';
+import { motion } from 'framer-motion';
 
 interface AIPlannerProps {
   selectedPlaces: Place[];
@@ -13,91 +12,86 @@ interface AIPlannerProps {
   defaultDestination?: string;
 }
 
+const getDestinationLabel = (id: string) => {
+  switch (id) {
+    case 'hanoi': return 'Hà Nội';
+    case 'saigon': return 'TP. Hồ Chí Minh';
+    case 'danang': return 'Đà Nẵng';
+    case 'dalat': return 'Đà Lạt';
+    default: return 'Khác';
+  }
+};
+
+// Estimate budget level from VND amount
+const estimateBudgetLevel = (vnd: number): BudgetLevel => {
+  if (vnd < 300000) return 'cheap';
+  if (vnd < 800000) return 'moderate';
+  return 'luxury';
+};
+
 export default function AIPlanner({ selectedPlaces, onRemoveSelectedPlace, defaultDestination = 'hanoi' }: AIPlannerProps) {
   const [destination, setDestination] = useState(defaultDestination);
   const [customDestination, setCustomDestination] = useState('');
-  const [durationValue, setDurationValue] = useState(1);
-  const [durationUnit, setDurationUnit] = useState<'hours' | 'days'>('days');
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [budgetVnd, setBudgetVnd] = useState(800000);
+  const [groupSize, setGroupSize] = useState('3-5');
+  const [startTime, setStartTime] = useState('16:00');
+  const [endTime, setEndTime] = useState('22:00');
   const [radiusKm, setRadiusKm] = useState(10);
-  const [budgetLevel, setBudgetLevel] = useState<BudgetLevel>('moderate');
   const [transportation, setTransportation] = useState<'motorbike' | 'taxi' | 'walking'>('motorbike');
-  
-  // SỬ DỤNG PURPOSE (MỤC ĐÍCH CHUYẾN ĐI) THAY VÌ VIBE
-  const [purpose, setPurpose] = useState('');
-  
   const [weatherPreference, setWeatherPreference] = useState<'auto' | 'sunny' | 'rainy' | 'hot'>('auto');
   const [loading, setLoading] = useState(false);
   const [loaderMessageIndex, setLoaderMessageIndex] = useState(0);
   const [itinerary, setItinerary] = useState<Itinerary | null>(null);
   const [errorText, setErrorText] = useState('');
-
-  // Local storage for saved itineraries
   const [savedItineraries, setSavedItineraries] = useState<Itinerary[]>([]);
 
   useEffect(() => {
     const saved = localStorage.getItem('vivu_saved_itineraries');
-    if (saved) {
-      try {
-        setSavedItineraries(JSON.parse(saved));
-      } catch (e) {
-        console.warn("Failed to parse saved itineraries", e);
-      }
-    }
+    if (saved) { try { setSavedItineraries(JSON.parse(saved)); } catch {} }
   }, []);
 
-  const handleSaveItinerary = () => {
-    if (!itinerary) return;
-    
-    setSavedItineraries((prev) => {
-      let updated;
-      const alreadySaved = prev.some(item => item.id === itinerary.id);
-      
-      if (alreadySaved) {
-        updated = prev.filter(item => item.id !== itinerary.id);
-      } else {
-        updated = [itinerary, ...prev];
-      }
-      localStorage.setItem('vivu_saved_itineraries', JSON.stringify(updated));
-      return updated;
-    });
-  };
-
-  const isItinerarySaved = (id: string) => {
-    return savedItineraries.some(item => item.id === id);
-  };
-
-  const handleDeleteSavedItinerary = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setSavedItineraries((prev) => {
-      const updated = prev.filter(item => item.id !== id);
-      localStorage.setItem('vivu_saved_itineraries', JSON.stringify(updated));
-      return updated;
-    });
-  };
-
   useEffect(() => {
-    if (defaultDestination) {
-      setDestination(defaultDestination);
-    }
+    if (defaultDestination) setDestination(defaultDestination);
   }, [defaultDestination]);
 
   const loaderMilestones = [
-    '🤖 Đang kết nối Trực quan hóa dữ liệu du lịch...',
-    '⭐ Đang phân tích ý kiến đánh giá tích cực từ khách hàng cũ...',
-    '🏍️ Đang tính toán và kết nối các tọa độ di chuyển phù hợp nhất...',
-    '💰 Tổ chức quỹ ngân sách chi tiêu và phân phối hợp lý...',
-    '✨ Hoàn thiện tệp lịch trình cá nhân hóa bằng AI...'
+    '🤖 Đang kết nối trực quan hóa dữ liệu du lịch...',
+    '⭐ Đang phân tích đánh giá tích cực từ khách hàng...',
+    '🏍️ Đang tính toán các tọa độ di chuyển phù hợp...',
+    '💰 Tổ chức ngân sách và phân phối hợp lý...',
+    '✨ Hoàn thiện lịch trình cá nhân hóa bằng AI...'
   ];
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (loading) {
       interval = setInterval(() => {
-        setLoaderMessageIndex((prev) => (prev + 1) % loaderMilestones.length);
+        setLoaderMessageIndex(prev => (prev + 1) % loaderMilestones.length);
       }, 3500);
     }
     return () => clearInterval(interval);
   }, [loading]);
+
+  // Compute duration in hours from time range
+  const computeDurationHours = () => {
+    const [sh, sm] = startTime.split(':').map(Number);
+    const [eh, em] = endTime.split(':').map(Number);
+    const startMin = sh * 60 + sm;
+    let endMin = eh * 60 + em;
+    if (endMin <= startMin) endMin += 24 * 60; // overnight
+    return Math.max(1, Math.round((endMin - startMin) / 60));
+  };
+
+  const handleSaveItinerary = () => {
+    if (!itinerary) return;
+    setSavedItineraries(prev => {
+      const alreadySaved = prev.some(i => i.id === itinerary.id);
+      const updated = alreadySaved ? prev.filter(i => i.id !== itinerary.id) : [itinerary, ...prev];
+      localStorage.setItem('vivu_saved_itineraries', JSON.stringify(updated));
+      return updated;
+    });
+  };
 
   const handleGeneratePlan = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -106,7 +100,12 @@ export default function AIPlanner({ selectedPlaces, onRemoveSelectedPlace, defau
     setItinerary(null);
     setLoaderMessageIndex(0);
 
-    const finalDestinationName = destination === 'custom' ? (customDestination.trim() || 'Hội An, Quảng Nam') : getDestinationLabel(destination);
+    const finalDestinationName = destination === 'custom'
+      ? (customDestination.trim() || 'Hội An')
+      : getDestinationLabel(destination);
+
+    const durationHours = computeDurationHours();
+    const budgetLevel = estimateBudgetLevel(budgetVnd);
 
     try {
       const response = await fetch('/api/generate-plan', {
@@ -115,10 +114,14 @@ export default function AIPlanner({ selectedPlaces, onRemoveSelectedPlace, defau
         body: JSON.stringify({
           destination: finalDestinationName,
           budget: budgetLevel,
+          budgetVnd,
+          groupSize,
           transportation,
-          purpose: purpose.trim() || 'Khám phá và trải nghiệm thành phố', // GỬI PURPOSE LÊN SERVER
-          durationValue,
-          durationUnit,
+          purpose: aiPrompt.trim() || 'Khám phá và trải nghiệm thành phố',
+          durationValue: durationHours,
+          durationUnit: 'hours',
+          startTime,
+          endTime,
           radiusKm,
           selectedPlaces,
           weatherPreference
@@ -126,9 +129,7 @@ export default function AIPlanner({ selectedPlaces, onRemoveSelectedPlace, defau
       });
 
       const data = await response.json();
-      if (response.status !== 200 || data.error) {
-        throw new Error(data.error || 'Hệ thống AI bận rộn. Vui lòng kiểm tra cài đặt Secrets của bạn.');
-      }
+      if (response.status !== 200 || data.error) throw new Error(data.error || 'Hệ thống AI bận rộn.');
 
       const formattedDayPlans = (data.dayPlans || []).map((dp: any, dayIdx: number) => ({
         ...dp,
@@ -142,13 +143,13 @@ export default function AIPlanner({ selectedPlaces, onRemoveSelectedPlace, defau
       setItinerary({
         id: `itinerary-${Date.now()}`,
         destination: data.destination || finalDestinationName,
-        totalCost: data.totalCost || 500000,
-        durationDays: data.durationDays || (durationUnit === 'days' ? durationValue : 1),
-        durationValue: data.durationValue || durationValue,
-        durationUnit: data.durationUnit || durationUnit,
+        totalCost: data.totalCost || budgetVnd,
+        durationDays: 1,
+        durationValue: durationHours,
+        durationUnit: 'hours',
         radiusKm: data.radiusKm || radiusKm,
         transportation: data.transportation || transportation,
-        budgetLevel: data.budgetLevel || budgetLevel,
+        budgetLevel: budgetLevel,
         dayPlans: formattedDayPlans,
         additionalNotes: data.additionalNotes || '',
         weatherCondition: data.weatherCondition,
@@ -157,377 +158,307 @@ export default function AIPlanner({ selectedPlaces, onRemoveSelectedPlace, defau
         isOfflineFallback: !!data.isOfflineFallback
       });
     } catch (err: any) {
-      console.error(err);
-      setErrorText(err.message || 'Lỗi không xác định khi kết nối với máy chủ AI.');
+      setErrorText(err.message || 'Lỗi không xác định.');
     } finally {
       setLoading(false);
     }
   };
 
-  const getDestinationLabel = (id: string) => {
-    switch (id) {
-      case 'hanoi': return 'Hà Nội';
-      case 'saigon': return 'TP. Hồ Chí Minh';
-      case 'danang': return 'Đà Nẵng';
-      case 'dalat': return 'Đà Lạt';
-      default: return 'Khác';
-    }
-  };
+  // ── Styles ──
+  const inputCls = "w-full bg-white text-sm border-2 border-orange-200 rounded-xl px-3.5 py-2.5 focus:outline-none focus:border-orange-400 text-gray-800 font-semibold placeholder:text-gray-400 placeholder:font-normal transition-colors";
+  const labelCls = "block text-xs font-black text-orange-700 mb-2 uppercase tracking-wider";
+
+  const transportOptions = [
+    { id: 'motorbike', label: 'Xe máy',     icon: <Bike className="w-4 h-4" /> },
+    { id: 'taxi',     label: 'Ô tô / Grab', icon: <Car className="w-4 h-4" /> },
+    { id: 'walking',  label: 'Đi bộ',       icon: <Footprints className="w-4 h-4" /> }
+  ];
+
+  const weatherOptions = [
+    { id: 'auto',  label: 'Tự động phát hiện',  emoji: '🔄' },
+    { id: 'sunny', label: 'Nắng đẹp (Outdoor)',  emoji: '☀️' },
+    { id: 'rainy', label: 'Mưa dông (Indoor)',   emoji: '🌧️' },
+    { id: 'hot',   label: 'Nắng gắt (Cần mát)', emoji: '🥵' }
+  ];
+
+  const groupOptions = [
+    { value: '1',    label: 'Một mình (1 người)' },
+    { value: '2',    label: 'Cặp đôi (2 người)' },
+    { value: '3-5',  label: 'Nhóm bạn (3–5 người)' },
+    { value: '6-10', label: 'Nhóm lớn (6–10 người)' },
+    { value: '10+',  label: 'Đoàn đông (10+ người)' }
+  ];
+
+  if (itinerary) {
+    return (
+      <div className="animate-fade-in space-y-4">
+        <AIPlanDisplay itinerary={itinerary} onModifyItinerary={setItinerary} />
+        <div className="flex gap-3 flex-wrap">
+          <button
+            onClick={() => setItinerary(null)}
+            className="flex items-center gap-2 px-5 py-2.5 bg-white border-2 border-orange-200 text-orange-600 rounded-xl text-sm font-black hover:border-orange-400 transition-colors"
+          >
+            <RefreshCw className="w-4 h-4" /> Lập lại lịch trình
+          </button>
+          <button
+            onClick={handleSaveItinerary}
+            className="flex items-center gap-2 px-5 py-2.5 btn-teal rounded-xl text-sm"
+          >
+            <BookmarkCheck className="w-4 h-4" />
+            {savedItineraries.some(i => i.id === itinerary.id) ? 'Đã lưu' : 'Lưu lịch trình'}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div id="ai-planner-component" className="w-full">
-      
-      {loading ? (
-        <div className="bg-neutral-900 text-white rounded-3xl p-8 sm:p-12 text-center flex flex-col items-center justify-center space-y-6 h-[460px] border border-neutral-800 shadow-2xl relative overflow-hidden">
-          <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-emerald-500 via-teal-500 to-amber-400 animate-pulse" />
-          
-          <div className="relative">
-            <div className="w-16 h-16 rounded-full border-4 border-emerald-500/30 border-t-emerald-500 animate-spin" />
-            <Sparkles className="w-6 h-6 text-emerald-400 absolute inset-0 m-auto animate-pulse" />
-          </div>
+    <form onSubmit={handleGeneratePlan} className="space-y-7">
 
-          <div className="space-y-2 max-w-md">
-            <h3 className="text-lg font-bold text-white uppercase tracking-wider">Trí tuệ nhân tạo đang làm việc</h3>
-            <p className="text-sm text-emerald-300 font-medium font-mono min-h-[40px] animate-pulse">
-              {loaderMilestones[loaderMessageIndex]}
-            </p>
-            <p className="text-xs text-neutral-500">
-              Quá trình này mất khoảng vài giây để tính toán quãng đường tối ưu và tổng cộng chi tiêu...
-            </p>
-          </div>
+      {/* Header */}
+      <div className="flex items-center gap-3 pb-4 border-b-2 border-orange-100">
+        <div className="w-11 h-11 rounded-2xl bg-orange-100 flex items-center justify-center shrink-0">
+          <Sparkles className="w-5 h-5 text-orange-500" />
         </div>
-      ) : itinerary ? (
-        <div className="space-y-4">
-          <div className="flex justify-between items-center gap-3 flex-wrap">
-            <button
-              type="button"
-              onClick={handleSaveItinerary}
-              className={`inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
-                isItinerarySaved(itinerary.id)
-                  ? 'bg-emerald-50 border-emerald-250 text-emerald-700 font-extrabold shadow-xs'
-                  : 'bg-white hover:bg-neutral-50 text-neutral-700 border-neutral-200'
-              }`}
-            >
-              <BookmarkCheck className={`w-4 h-4 ${isItinerarySaved(itinerary.id) ? 'text-emerald-600' : 'text-neutral-400'}`} />
-              <span>{isItinerarySaved(itinerary.id) ? 'Đã lưu vào danh sách' : 'Lưu lại hành trình này'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setItinerary(null)}
-              className="inline-flex items-center gap-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer border border-neutral-200"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>Thiết lập lịch trình mới</span>
-            </button>
-          </div>
-
-          <AIPlanDisplay 
-            itinerary={itinerary} 
-            onModifyItinerary={(updated) => setItinerary(updated)} 
-          />
+        <div>
+          <h3 className="font-black text-gray-900 text-base">Thiết kế Tour Ăn Chơi với AI</h3>
+          <p className="text-xs text-gray-400 mt-0.5">AI cá nhân hóa lịch trình theo mục đích và thời gian thực.</p>
         </div>
-      ) : (
-        <div className="bg-white rounded-3xl border border-neutral-100 shadow-xl p-5 sm:p-7 text-left space-y-6">
-          
-          <div className="flex items-center gap-2 border-b border-neutral-100 pb-4">
-            <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl">
-              <Sparkles className="w-5.5 h-5.5" />
-            </div>
-            <div>
-              <h2 className="text-base sm:text-lg font-extrabold text-neutral-900">Thiết kế Tour Ăn Chơi với AI</h2>
-              <p className="text-xs text-neutral-400">AI cá nhân hóa lịch trình theo mục đích và thời gian thực.</p>
-            </div>
-          </div>
+      </div>
 
-          {savedItineraries.length > 0 && (
-            <div className="bg-neutral-50 rounded-2xl p-4 border border-neutral-200/60 text-left space-y-3">
-              <span className="text-[11px] font-black text-neutral-500 uppercase tracking-widest flex items-center gap-1.5">
-                <BookmarkCheck className="w-4 h-4 text-emerald-600 animate-pulse" />
-                <span>Các Lịch Trình Bạn Đã Lưu Trữ ({savedItineraries.length})</span>
-              </span>
+      {/* Loading */}
+      {/* Loading (Đã thêm hiệu ứng Framer Motion) */}
+      {loading && (
+        <motion.div 
+          initial={{ opacity: 0, y: -10, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          transition={{ duration: 0.3 }}
+          className="bg-orange-50 border-2 border-orange-200 rounded-2xl p-6 text-center space-y-3"
+        >
+          <div className="w-12 h-12 border-4 border-orange-400 border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-sm font-bold text-orange-700 animate-pulse">
+            {loaderMilestones[loaderMessageIndex]}
+          </p>
+        </motion.div>
+      )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {savedItineraries.map((saved) => (
-                  <div
-                    key={saved.id}
-                    onClick={() => setItinerary(saved)}
-                    className="group relative bg-white border border-neutral-200 hover:border-emerald-400 p-3 rounded-xl transition-all cursor-pointer text-xs flex flex-col justify-between hover:shadow-xs"
-                  >
-                    <div className="space-y-1.5 pr-6">
-                      <p className="font-extrabold text-neutral-800 line-clamp-1 group-hover:text-emerald-700">
-                        📍 Chuyến Đi {saved.destination}
-                      </p>
-                      <p className="text-[10px] text-neutral-500 font-medium">
-                        ⏱️ {saved.durationValue && saved.durationUnit
-                          ? `${saved.durationValue} ${saved.durationUnit === 'hours' ? 'Giờ' : 'Ngày'}`
-                          : `${saved.durationDays} Ngày`
-                        } • 💰 {(saved.totalCost || 0).toLocaleString('vi-VN')}đ
-                      </p>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={(e) => handleDeleteSavedItinerary(saved.id, e)}
-                      className="absolute top-2 right-2 p-1 text-neutral-300 hover:text-red-500 rounded-md hover:bg-neutral-50 transition-colors"
-                      title="Xóa lịch trình đã lưu"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {errorText && (
-            <div className="bg-red-50 text-red-700 text-xs font-semibold p-4 rounded-2xl flex items-start gap-2.5 border border-red-100 leading-relaxed text-left">
-              <AlertCircle className="w-5 h-5 shrink-0 text-red-500" />
-              <div>
-                <p className="font-bold mb-0.5">Không Thể Hoàn Thành Tạo Lịch Trình</p>
-                <p>{errorText}</p>
-                <p className="text-[10px] text-neutral-500 font-normal mt-1">Thông thường, lỗi này xảy ra khi bạn chưa khai báo mã khoá Gemini API trong bảng Settings &gt; Secrets của Studio.</p>
-              </div>
-            </div>
-          )}
-
-          <form onSubmit={handleGeneratePlan} className="space-y-5">
-            
-            {/* TEXTAREA NHẬP MỤC ĐÍCH CHUYẾN ĐI (MỚI) */}
-            <div>
-              <label className="block text-xs font-bold text-neutral-700 mb-1.5 uppercase tracking-wider">Mục Đích & Yêu Cầu Cụ Thể (AI Prompt)</label>
-              <textarea
-                id="purpose-input"
-                rows={2}
-                value={purpose}
-                onChange={(e) => setPurpose(e.target.value)}
-                placeholder="Ví dụ: Xả stress sau kỳ thi, đi cafe học Toán, chụp ảnh kỷ yếu, né giờ làm ca sáng (7h-13h)..."
-                className="w-full bg-neutral-50/50 text-xs border border-neutral-200 rounded-xl px-3.5 py-2.5 focus:outline-emerald-500 focus:bg-white text-neutral-800 text-left placeholder:text-neutral-400 resize-none shadow-inner"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <div>
-                <label className="block text-xs font-bold text-neutral-700 mb-1.5 uppercase tracking-wider">📍Điểm xuất phát</label>
-                <select
-                  value={destination}
-                  onChange={(e) => setDestination(e.target.value)}
-                  className="w-full bg-neutral-50 text-xs border border-neutral-200 rounded-xl px-3.5 py-2.5 text-left focus:outline-emerald-500 focus:bg-white text-neutral-800 cursor-pointer"
-                >
-                  <option value="hanoi">Hà Nội (Khu Phố Cổ & Tây Hồ)</option>
-                  <option value="saigon">TP. Hồ Chí Minh (Quận 1 / Phú Nhuận)</option>
-                  <option value="danang">Đà Nẵng (Sông Hàn & Cầu Rồng)</option>
-                  <option value="dalat">Đà Lạt (Đồi chè & Thung lũng sương)</option>
-                  <option value="custom">Nhập tọa độ địa điểm khác...</option>
-                </select>
-
-                {destination === 'custom' && (
-                  <input
-                    type="text" required
-                    placeholder="Nhập địa điểm"
-                    value={customDestination}
-                    onChange={(e) => setCustomDestination(e.target.value)}
-                    className="w-full bg-white text-xs border border-neutral-250 rounded-xl px-3.5 py-2.5 text-left focus:outline-emerald-500 mt-2 font-sans placeholder:text-neutral-400"
-                  />
-                )}
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-neutral-700 mb-1.5 uppercase tracking-wider">Hạn Mức Ngân Sách</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { id: 'cheap', title: 'Tiết kiệm', desc: 'Có quẩy, quán vỉa hè' },
-                    { id: 'moderate', title: 'Trung bình', desc: 'Nhà hàng tầm trung' },
-                    { id: 'luxury', title: 'Cao cấp', desc: 'Sang trọng sang chảnh' }
-                  ].map((lvl) => (
-                    <button
-                      key={lvl.id}
-                      type="button"
-                      onClick={() => setBudgetLevel(lvl.id as BudgetLevel)}
-                      className={`px-2.5 py-2 rounded-xl text-xs border text-left flex flex-col justify-between transition-all cursor-pointer ${
-                        budgetLevel === lvl.id
-                          ? 'bg-neutral-900 border-neutral-950 text-white shadow-sm'
-                          : 'bg-neutral-50 border-neutral-200 text-neutral-600 hover:bg-neutral-100'
-                      }`}
-                    >
-                      <span className="font-bold">{lvl.title}</span>
-                      <span className={`text-[9px] font-medium mt-1 ${budgetLevel === lvl.id ? 'text-emerald-300' : 'text-neutral-400'}`}>{lvl.desc}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-neutral-700 mb-1.5 uppercase tracking-wider">Phương Tiện Di Chuyển Chính</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { id: 'motorbike', label: 'Xe máy', icon: <Bike className="w-4 h-4" /> },
-                    { id: 'taxi', label: 'Ô tô / Grab', icon: <Navigation className="w-4 h-4 rotate-45" /> },
-                    { id: 'walking', label: 'Đi bộ', icon: <User className="w-4 h-4 animate-pulse" /> }
-                  ].map((method) => (
-                    <button
-                      key={method.id}
-                      type="button"
-                      onClick={() => setTransportation(method.id as any)}
-                      className={`px-3 py-2.5 rounded-xl text-xs font-semibold border flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                        transportation === method.id
-                          ? 'bg-emerald-600 border-emerald-600 text-white shadow'
-                          : 'bg-neutral-50 border-neutral-200 text-neutral-600 hover:bg-neutral-100'
-                      }`}
-                    >
-                      {method.icon}
-                      <span>{method.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-neutral-700 mb-1.5 uppercase tracking-wider">Thời Lượng Hành Trình</label>
-                <div className="flex gap-2">
-                  <input
-                    type="number"
-                    min="1"
-                    max={durationUnit === 'hours' ? 24 : 15}
-                    value={durationValue}
-                    onChange={(e) => setDurationValue(Math.max(1, parseInt(e.target.value) || 1))}
-                    className="w-[90px] bg-neutral-50 text-xs border border-neutral-200 rounded-xl px-3 py-2.5 focus:outline-emerald-500 focus:bg-white text-neutral-800 text-center font-bold"
-                  />
-                  <select
-                    value={durationUnit}
-                    onChange={(e) => {
-                      const unit = e.target.value as 'hours' | 'days';
-                      setDurationUnit(unit);
-                      setDurationValue(unit === 'hours' ? 8 : 1);
-                    }}
-                    className="flex-1 bg-neutral-50 text-xs border border-neutral-200 rounded-xl px-3 py-2.5 focus:outline-emerald-500 focus:bg-white text-neutral-800 cursor-pointer text-left"
-                  >
-                    <option value="days">Ngày (Days)</option>
-                    <option value="hours">Giờ (Hours)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-neutral-700 mb-1.5 uppercase tracking-wider">Bán Kính Di Chuyển (Cự Ly)</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min="1" max="100"
-                    value={radiusKm}
-                    onChange={(e) => setRadiusKm(Math.max(1, parseInt(e.target.value) || 1))}
-                    className="w-full bg-neutral-50 text-xs border border-neutral-200 rounded-xl px-3.5 py-2.5 focus:outline-emerald-500 focus:bg-white text-neutral-800 font-bold"
-                  />
-                  <span className="text-[11px] font-mono font-semibold text-neutral-500 bg-neutral-100 px-3 py-2.5 rounded-xl border border-neutral-200 shrink-0">
-                    km bán kính
-                  </span>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-neutral-700 mb-1.5 uppercase tracking-wider">Trạng Thái Thời Tiết (Weather-Aware)</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setWeatherPreference('auto')}
-                    className={`px-3 py-2 rounded-xl text-[11px] font-semibold border flex items-center gap-1.5 transition-all text-left cursor-pointer truncate ${
-                      weatherPreference === 'auto'
-                        ? 'bg-emerald-50 border-emerald-500 text-emerald-800 font-bold shadow-xs'
-                        : 'bg-neutral-50 border-neutral-200 text-neutral-600 hover:bg-neutral-100'
-                    }`}
-                  >
-                    <CloudSun className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                    <span className="truncate">Tự động phát hiện</span>
-                  </button>
-                  
-                  <button
-                    type="button"
-                    onClick={() => setWeatherPreference('sunny')}
-                    className={`px-3 py-2 rounded-xl text-[11px] font-semibold border flex items-center gap-1.5 transition-all text-left cursor-pointer truncate ${
-                      weatherPreference === 'sunny'
-                        ? 'bg-amber-50 border-amber-500 text-amber-800 font-bold shadow-xs'
-                        : 'bg-neutral-50 border-neutral-200 text-neutral-600 hover:bg-neutral-100'
-                    }`}
-                  >
-                    <CloudSun className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                    <span className="truncate">Nắng đẹp (Outdoor)</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setWeatherPreference('rainy')}
-                    className={`px-3 py-2 rounded-xl text-[11px] font-semibold border flex items-center gap-1.5 transition-all text-left cursor-pointer truncate ${
-                      weatherPreference === 'rainy'
-                        ? 'bg-blue-50 border-blue-400 text-blue-900 font-bold shadow-xs'
-                        : 'bg-neutral-50 border-neutral-200 text-neutral-600 hover:bg-neutral-100'
-                    }`}
-                  >
-                    <CloudRain className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                    <span className="truncate">Mưa dông (Indoor)</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setWeatherPreference('hot')}
-                    className={`px-3 py-2 rounded-xl text-[11px] font-semibold border flex items-center gap-1.5 transition-all text-left cursor-pointer truncate ${
-                      weatherPreference === 'hot'
-                        ? 'bg-red-50 border-red-400 text-red-900 font-bold shadow-xs'
-                        : 'bg-neutral-50 border-neutral-200 text-neutral-600 hover:bg-neutral-100'
-                    }`}
-                  >
-                    <ThermometerSun className="w-3.5 h-3.5 text-red-500 shrink-0" />
-                    <span className="truncate">Nắng gắt (Cần mát)</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {selectedPlaces.length > 0 && (
-              <div className="bg-emerald-50/40 rounded-2xl p-4 border border-emerald-100/50 text-left space-y-2.5">
-                <div className="flex justify-between items-center">
-                  <span className="text-xs font-bold text-emerald-800 flex items-center gap-1">
-                    <BookmarkCheck className="w-4 h-4 text-emerald-600" />
-                    Các Thẻ Địa Điểm Đã Chọn Cho Tour ({selectedPlaces.length}):
-                  </span>
-                  <p className="text-[10px] text-neutral-400">Các điểm này sẽ bắt buộc xuất hiện trong lịch trình</p>
-                </div>
-
-                <div className="flex flex-wrap gap-1.5">
-                  {selectedPlaces.map((pl) => (
-                    <span 
-                      key={pl.id} 
-                      className="bg-white border border-emerald-200 text-teal-800 text-[11px] font-medium pl-2.5 pr-1 py-0.5 rounded-full inline-flex items-center gap-1.5 hover:bg-neutral-50 transition-colors cursor-pointer group"
-                      onClick={() => onRemoveSelectedPlace(pl.id)}
-                      title="Bỏ điểm khỏi lịch trình bắt buộc"
-                    >
-                      <span className="truncate">{pl.name}</span>
-                      <span className="text-neutral-300 group-hover:text-red-500 transition-colors font-bold px-1.5">×</span>
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="pt-2">
-              <button
-                type="submit"
-                className="w-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-2xl py-3 text-xs font-bold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer text-center"
-              >
-                <Sparkles className="w-4 h-4 text-emerald-200 animate-pulse" />
-                <span>
-                  {selectedPlaces.length > 0 
-                    ? `Lên lịch trình cá nhân hóa + ${selectedPlaces.length} điểm đã chọn` 
-                    : 'Thiết kế lịch trình cá nhân hóa bằng AI ngay'}
-                </span>
-              </button>
-              <p className="text-[10px] text-neutral-400 text-center mt-2">Dịch vụ sử dụng mô hình trí tuệ nhân tạo Gemini-3.5-Flash</p>
-            </div>
-
-          </form>
-
+      {errorText && (
+        <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-4 flex gap-3">
+          <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+          <p className="text-sm text-red-700 font-semibold">{errorText}</p>
         </div>
       )}
 
-    </div>
+      {/* ── 1. AI Prompt (full width) ── */}
+      <div>
+        <label className={labelCls}>🎯 Mục Đích & Yêu Cầu Cụ Thể (AI Prompt)</label>
+        <textarea
+          rows={3}
+          value={aiPrompt}
+          onChange={e => setAiPrompt(e.target.value)}
+          placeholder="Ví dụ: Xả stress sau kỳ thi, đi cafe học Toán, chụp ảnh kỷ yếu, né giờ làm ca sáng (7h-13h)..."
+          className={`${inputCls} resize-none leading-relaxed`}
+        />
+        <p className="text-[10px] text-gray-400 mt-1 ml-1">Càng chi tiết, AI càng lên lịch chính xác hơn.</p>
+      </div>
+
+      {/* ── 2. Điểm xuất phát + Phương tiện ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <label className={labelCls}>📍 Điểm Xuất Phát</label>
+          <select value={destination} onChange={e => setDestination(e.target.value)} className={inputCls}>
+            <option value="hanoi">Hà Nội (Khu Phố Cổ & Tây Hồ)</option>
+            <option value="saigon">TP. Hồ Chí Minh (Quận 1 & Bình Thạnh)</option>
+            <option value="danang">Đà Nẵng (Bãi biển Mỹ Khê)</option>
+            <option value="dalat">Đà Lạt (Trung tâm & Hồ Xuân Hương)</option>
+            <option value="custom">📝 Nhập điểm đến khác...</option>
+          </select>
+          {destination === 'custom' && (
+            <input type="text" placeholder="Ví dụ: Hội An, Quảng Nam" value={customDestination}
+              onChange={e => setCustomDestination(e.target.value)} className={`${inputCls} mt-2`} />
+          )}
+        </div>
+
+        <div>
+          <label className={labelCls}>🏍️ Phương Tiện Di Chuyển Chính</label>
+          <div className="grid grid-cols-3 gap-2">
+            {transportOptions.map(t => (
+              <button key={t.id} type="button" onClick={() => setTransportation(t.id as any)}
+                className={`py-3 rounded-xl border-2 flex flex-col items-center justify-center gap-1.5 text-xs font-bold transition-all cursor-pointer ${
+                  transportation === t.id
+                    ? 'btn-orange border-orange-500 shadow-md'
+                    : 'bg-white border-orange-200 text-gray-600 hover:border-orange-300'
+                }`}
+              >
+                {t.icon}<span>{t.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ── 3. Ngân sách (VND) + Số lượng người ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <label className={labelCls}>💰 Tổng Ngân Sách (VND)</label>
+          <input
+            type="number"
+            min="0"
+            step="50000"
+            value={budgetVnd}
+            onChange={e => setBudgetVnd(Math.max(0, parseInt(e.target.value) || 0))}
+            className={inputCls}
+            placeholder="800000"
+          />
+          {/* Budget hint pill */}
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
+            {[200000, 500000, 800000, 1500000, 3000000].map(amt => (
+              <button
+                key={amt}
+                type="button"
+                onClick={() => setBudgetVnd(amt)}
+                className={`text-[10px] font-bold px-2.5 py-1 rounded-full border transition-all cursor-pointer ${
+                  budgetVnd === amt
+                    ? 'bg-orange-500 text-white border-orange-500'
+                    : 'bg-white border-orange-200 text-orange-600 hover:border-orange-400'
+                }`}
+              >
+                {amt.toLocaleString('vi-VN')}đ
+              </button>
+            ))}
+          </div>
+          {/* Auto-detected level hint */}
+          <p className="text-[10px] text-gray-400 mt-1.5 ml-0.5">
+            Phân loại tự động:&nbsp;
+            <span className="font-bold text-orange-600">
+              {estimateBudgetLevel(budgetVnd) === 'cheap' ? '🟢 Tiết kiệm'
+               : estimateBudgetLevel(budgetVnd) === 'moderate' ? '🟡 Trung bình'
+               : '🔴 Cao cấp'}
+            </span>
+          </p>
+        </div>
+
+        <div>
+          <label className={labelCls}>👥 Số Lượng Người</label>
+          <select
+            value={groupSize}
+            onChange={e => setGroupSize(e.target.value)}
+            className={inputCls}
+          >
+            {groupOptions.map(o => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* ── 4. Khung giờ: Bắt đầu + Kết thúc ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <label className={labelCls}>🕐 Bắt Đầu Lúc</label>
+          <input
+            type="time"
+            value={startTime}
+            onChange={e => setStartTime(e.target.value)}
+            className={inputCls}
+          />
+        </div>
+        <div>
+          <label className={labelCls}>🕙 Kết Thúc Lúc</label>
+          <input
+            type="time"
+            value={endTime}
+            onChange={e => setEndTime(e.target.value)}
+            className={inputCls}
+          />
+        </div>
+      </div>
+
+      {/* Duration preview pill */}
+      {startTime && endTime && (
+        <div className="flex items-center gap-2 -mt-4">
+          <div className="bg-orange-50 border-2 border-orange-200 rounded-xl px-4 py-2 flex items-center gap-2 text-sm">
+            <span className="text-orange-500 font-black">⏱</span>
+            <span className="text-gray-600 font-semibold">
+              Tổng thời lượng:&nbsp;
+              <span className="text-orange-600 font-black">{computeDurationHours()} giờ</span>
+              &nbsp;({startTime} – {endTime})
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ── 5. Bán kính + Thời tiết ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <label className={labelCls}>📏 Bán Kính Di Chuyển (Cự Ly)</label>
+          <div className="flex gap-2">
+            <input type="number" min="1" max="100" value={radiusKm}
+              onChange={e => setRadiusKm(Math.max(1, parseInt(e.target.value) || 1))}
+              className={`flex-1 ${inputCls}`} />
+            <span className="bg-orange-50 border-2 border-orange-200 text-orange-700 text-sm font-bold px-4 rounded-xl flex items-center shrink-0">
+              km bán kính
+            </span>
+          </div>
+        </div>
+
+        <div>
+          <label className={labelCls}>🌤️ Trạng Thái Thời Tiết (Weather-Aware)</label>
+          <div className="grid grid-cols-2 gap-2">
+            {weatherOptions.map(w => (
+              <button key={w.id} type="button" onClick={() => setWeatherPreference(w.id as any)}
+                className={`px-3 py-2.5 rounded-xl border-2 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer text-left ${
+                  weatherPreference === w.id
+                    ? 'bg-orange-50 border-orange-400 text-orange-900 shadow-sm'
+                    : 'bg-white border-orange-200 text-gray-600 hover:border-orange-300'
+                }`}
+              >
+                <span>{w.emoji}</span>
+                <span className="truncate">{w.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Selected places ── */}
+      {selectedPlaces.length > 0 && (
+        <div className="bg-orange-50 rounded-2xl p-4 border-2 border-orange-200">
+          <p className="text-xs font-black text-orange-700 mb-2.5 flex items-center gap-1.5">
+            <BookmarkCheck className="w-4 h-4" />
+            Địa điểm đã chọn từ giỏ ({selectedPlaces.length})
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {selectedPlaces.map(pl => (
+              <span key={pl.id} onClick={() => onRemoveSelectedPlace(pl.id)}
+                className="bg-white border-2 border-orange-200 text-orange-700 text-xs font-bold px-3 py-1.5 rounded-full cursor-pointer hover:border-red-300 hover:text-red-600 transition-colors inline-flex items-center gap-1.5">
+                📍 {pl.name} <span className="text-gray-300 hover:text-red-500 font-black">×</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Submit ── */}
+      <div className="space-y-2">
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full py-4 text-base font-black rounded-2xl text-white flex items-center justify-center gap-2.5 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+          style={{
+            background: 'linear-gradient(135deg, #F97316 0%, #EA580C 100%)',
+            boxShadow: '0 6px 24px rgba(249,115,22,0.45)'
+          }}
+        >
+          <Sparkles className="w-5 h-5 animate-pulse" />
+          THIẾT KẾ LỊCH TRÌNH BẰNG AI NGAY
+        </button>
+        <p className="text-center text-[11px] text-gray-400">
+          Dịch vụ sử dụng mô hình trí tuệ nhân tạo Gemini-3.5-Flash
+        </p>
+      </div>
+
+    </form>
   );
 }
